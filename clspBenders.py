@@ -192,6 +192,10 @@ History
     constraint seems to be correct, but no improvement is observed with respect
     to the lower bound of the master.
 
+23.03.17:
+
+    Added user cuts, to get cuts for fractional values of y* as well.
+
 
 """
 
@@ -208,6 +212,7 @@ _INFTY = sys.float_info.max
 _EPSI  = sys.float_info.epsilon
 
 inputfile = ""
+usercuts  = ""
 
 #  we set the master variables as global, while the subproblem vars are local
 z_ilo     = -1
@@ -273,6 +278,52 @@ class BendersLazyConsCallback(LazyConstraintCallback):
                      rhs        = worker.cutRhs)
 
 
+class BendersUserCutCallback(UserCutCallback):
+
+    def __call__(self):
+        """
+        Define the actions to be carried out at every callback.
+
+        Note that the ``separate`` function of the subproblem is called here.
+
+        """
+        # Skip the separation if not at the end of the cut loop
+        if not self.is_after_cut_loop():
+            return
+
+        # get data structure (self is the master)
+        worker = self.worker
+        y_ilo  = self.y_ilo
+        z_ilo  = self.z_ilo
+        #  xc_ilo = self.xc_ilo
+        inp    = self.inp
+
+
+        #  get current master solution
+        zHat = self.get_values(z_ilo)
+        ySol = []
+        for j in range(inp.nI):
+            ySol.append([])
+            ySol[j] = self.get_values(y_ilo[j])
+        #  xcSol = self.get_values(xc_ilo)
+
+
+        #  flatten =  [item for sublist in ySol for item in sublist]
+    
+        #  benders cut separation
+        #  cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo, xcSol, xc_ilo)
+        cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo)
+        if cutType > 0:
+            #  a = [float(worker.cutLhs.val[i]) for i in range(inp.nI*inp.nP)]
+            #  lhsSum = sum([a[i]*flatten[i] for i in range(inp.nI*inp.nP)])
+            # add Benders cut to the master
+            self.add(cut       = worker.cutLhs,
+                     sense     = "L",
+                     rhs       = worker.cutRhs)
+
+
+
+
 def parseCommandLine(argv):
     """
     .. func:parseCommandLine()
@@ -283,21 +334,27 @@ def parseCommandLine(argv):
 
     -i inputfile    instance file name
 
+    -u userCuts    activate user cuts (fractional values)
+
     """
     global inputfile
+    global userCuts
     
     try:
-        opts, args = getopt.getopt(argv, "hi:", ["help","ifile="])
+        opts, args = getopt.getopt(argv, "hi:u:", ["help","ifile=","ucuts"])
     except getopt.GetoptError:
-        print("Command Line Error. Usage : python cflp.py -i <inputfile>")
+        print("Command Line Error. Usage : python cflp.py -i <inputfile> -u\
+        <usercuts>")
         sys.exit(2)
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print("Usage : python cflp.py -i <inputfile> ")
+            print("Usage : python cflp.py -i <inputfile> -u <usercuts>")
             sys.exit()
         elif opt in ("-i", "--ifile"):
             inputfile = arg
+        elif opt in ("-u", "--ucuts"):
+            userCuts = arg
 
 class Instance:
     """
@@ -712,15 +769,15 @@ class WorkerLP:
         for j in range(inp.nI):
             for t in range(inp.nP):
                 constrName = "logic." + str(j) + "." + str(t)
-                if ySol[j][t] >= (1.0-_EPSI):
-                    rhsValue = inp.max_prod[j][t]
-                else:
-                    rhsValue = 0.0
+                #  if ySol[j][t] >= (1.0-_EPSI):
+                rhsValue = inp.max_prod[j][t]*ySol[j][t]
+                #  else:
+                    #  rhsValue = 0.0
                 cpx.linear_constraints.set_rhs(constrName, rhsValue)
 
         #  update rhs values : capacity constraints
         for t in range(inp.nP):
-            sumY = sum([inp.m[j][t] for j in range(inp.nI) if ySol[j][t] >=
+            sumY = sum([inp.m[j][t]*ySol[j][t] for j in range(inp.nI) if ySol[j][t] >=
             (1.0-_EPSI)])
             constrName = "capacity." + str(t)
             cpx.linear_constraints.set_rhs(constrName, inp.cap[t]-sumY)
@@ -822,6 +879,7 @@ class WorkerLP:
             #  cutVals.append(-1.0)
             #  for t in range(inp.nP):
             #      cutRhs -= inp.cap[t]*dCapacity[t]
+
 
         #  return cut and type
         cutLhs = cplex.SparsePair(ind=cutVars, val=cutVals)
@@ -942,13 +1000,20 @@ def main(argv):
     cpx.parameters.mip.strategy.search.set(
         cpx.parameters.mip.strategy.search.values.traditional)
 
-    # register callback
+    # register LAZY callback
     lazyBenders = cpx.register_callback(BendersLazyConsCallback)
     lazyBenders.inp   = inp
     lazyBenders.z_ilo = z_ilo
     lazyBenders.y_ilo = y_ilo
     #  lazyBenders.xc_ilo = xc_ilo
     lazyBenders.worker = worker
+    if userCuts == "1":
+        # register USER callback
+        userBenders = cpx.register_callback(BendersUserCutCallback)
+        userBenders.inp   = inp
+        userBenders.z_ilo = z_ilo
+        userBenders.y_ilo = y_ilo
+        userBenders.worker = worker
 
     startTime = time.time()
     # Solve the model
