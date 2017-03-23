@@ -1,0 +1,428 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>clspBenders module &mdash; MIMPLS Benders 1.0.0 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '1.0.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="MIMPLS Benders 1.0.0 documentation" href="index.html" />
+    <link rel="next" title="conf module" href="conf.html" />
+    <link rel="prev" title="Welcome to MIMPLS Benders documentation!" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="conf.html" title="conf module"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Welcome to MIMPLS Benders documentation!"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-clspBenders">
+<span id="clspbenders-module"></span><h1>clspBenders module<a class="headerlink" href="#module-clspBenders" title="Permalink to this headline">¶</a></h1>
+<hr class="docutils" />
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Filename:</th><td class="field-body">clspBenders.py</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Author:</th><td class="field-body">marco caserta</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Date:</th><td class="field-body">09.03.2017</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">20.03.17</td>
+</tr>
+</tbody>
+</table>
+<p>Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)</p>
+<p>(This document was generated on 20.03.17 at 11:34.)</p>
+<hr class="docutils" />
+<blockquote>
+<div><p>This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or (at your option)
+any later version.</p>
+<p>This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+more details.</p>
+<p>You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place - Suite 330, Boston, MA  02111-1307, USA.</p>
+</div></blockquote>
+<hr class="docutils" />
+<div class="section" id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
+<p>This code implements a simple benders decomposition scheme for the 
+multi-item multi-period capacitated lot sizing problem. Benders cuts are added 
+via LazyConstraintCallback(). The case of an infeasibility cut is not
+considered, since the subproblem is always feasible (due to the possibility
+to choose an arbitrarily large value for the initial inventory level.) This
+should be improved adding a cut based on extreme rays.</p>
+<p>The following is a formulation for the MIMPLS:</p>
+<div class="math">
+<p><img src="_images/math/315f71c3becfb35f83611d5c12cbfd88bed99de5.png" alt="\begin{eqnarray}
+   \max     &amp; &amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T (f_{jt}y_{jt} +
+    c_{jt}x_{jt} + h_{jt}s_{jt}) \\
+            &amp; s.t. &amp; \nonumber \\
+            &amp;&amp; \displaystyle \sum_{j=1}^n a_{jt}x_{jt}+m_{jt}y_{jt} \leq
+            b_t, \quad \forall t \\
+            &amp;&amp; x_{jt} + s_{jt-1} - s_{jt} = d_{jt}, \quad \forall j,t \\
+            &amp;&amp; x_{jt} \leq M y_{jt}, \quad \forall j,t \\
+            &amp;&amp; y_{jt} \in \left\{0,1\right\}, x_{jt}, s_{jt} \geq 0
+\end{eqnarray}"/></p>
+</div><p>To address the problem using Benders decomposition, we define a master, which
+includes the <em>difficult</em> binary variables <img class="math" src="_images/math/7e65b69d8d4a3093c7896dd1ab16b1966fcde877.png" alt="y_{jt}"/>, and a subproblem, 
+which deals with the continuous variables <img class="math" src="_images/math/f5f61982192147d15f4cf63879cc659b7daf7aa0.png" alt="x_{jt}, s_{jt}"/>.</p>
+<div class="section" id="master-problem">
+<h3>Master Problem<a class="headerlink" href="#master-problem" title="Permalink to this headline">¶</a></h3>
+<p>The master is:</p>
+<div class="math">
+<p><img src="_images/math/4f5cbbf1a5fb575b91393e9ece0d0ac04abe6b10.png" alt="\begin{eqnarray}
+   \max     &amp;&amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T f_{jt}y_{jt} + z\\
+            &amp; s.t. &amp; \nonumber \\
+            &amp;&amp; z \geq \phi(\mathbf{y}) \\
+            &amp;&amp; y_{jt} \in \left\{0,1\right\}
+\end{eqnarray}"/></p>
+</div><p>where <img class="math" src="_images/math/87d649494461366e1eb08e093a10bd909c4ea8c0.png" alt="\phi(\mathbf{y})"/> is the best possible cost obtained for a given 
+<img class="math" src="_images/math/c466316585a9a1c0a5137f093313c8ff5e5d329b.png" alt="\mathbf{y}"/>.</p>
+</div>
+<div class="section" id="subproblem">
+<h3>Subproblem<a class="headerlink" href="#subproblem" title="Permalink to this headline">¶</a></h3>
+<p>Given a solution to the master problem <img class="math" src="_images/math/10de9fb08e39a54cd60f7035c6915df992c18094.png" alt="\mathbf{y}^*"/>, we define a primal
+subproblem as:</p>
+<div class="math">
+<p><img src="_images/math/51eccaa31685bd9c48d5be40a4e3f0d98d85ea8b.png" alt="\begin{eqnarray}
+   \max     &amp; &amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T c_{jt}x_{jt} + h_{jt}s_{jt} \\
+            &amp; s.t. &amp; \nonumber \\
+            &amp;&amp; \displaystyle \sum_{j=1}^n a_{jt}x_{jt}\leq
+            b_t - m_{jt}y_{jt}^* , \quad \forall t \\ 
+            &amp;&amp; x_{jt} + s_{jt-1} - s_{jt} = d_{jt}, \quad \forall j,t \\
+            &amp;&amp; x_{jt} \leq M y_{jt}^*, \quad \forall j,t \\
+            &amp;&amp; x_{jt}, s_{jt} \geq 0
+\end{eqnarray}"/></p>
+</div><p>Note that the subproblem is an LP and, therefore, can easily be solved using 
+cplex. Once the subproblem is solved, we obtain the optimal dual values.</p>
+<p>Assume we have:</p>
+<ul class="simple">
+<li><img class="math" src="_images/math/0afffa4a24169745c72fd2cbc3ad66c21eefac47.png" alt="\lambda_t"/>: The dual values of the capacity constraints (2)</li>
+<li><img class="math" src="_images/math/e556375c4157d240fad9f0f4284b22d3062a3f88.png" alt="\omega_{jt}"/>: The dual values of the demand constraints (3)</li>
+<li><img class="math" src="_images/math/8698aa13b88ef0deca508a7694d2aa881c8d959a.png" alt="\nu{jt}"/>: The dual values of the logical constraints (4)</li>
+</ul>
+<p>Then, we write the benders cut as follows:</p>
+<div class="math">
+<p><img src="_images/math/36c4d9d7b15e71868da62eff10ecd775fbadc079.png" alt="\displaystyle z \geq \sum_{t=1}^T \left( b_t - \sum_{j=1}^n m_{jt}y_{jt} \right)
++ \sum_{j=1}^n \sum_{t=1}^T d_{jt}\omega_{jt} + \sum_{j=1}^n \sum_{t=1}^T
+M\nu_{jt}y_{jt}
+
+\sum_{j=1}^n \sum_{t=1}^T y_{jt} \left(M\nu_{jt} - \lambda_t m_{jt} \right) -z \leq
+- \sum_{t=1}^t \lambda_t b_t - \sum_{j=1}^n \sum_{t=1}^T \omega_{jt} d_{jt}"/></p>
+</div></div>
+<div class="section" id="alternative-formulation-based-on-the-support-function">
+<h3>Alternative Formulation Based on the Support Function<a class="headerlink" href="#alternative-formulation-based-on-the-support-function" title="Permalink to this headline">¶</a></h3>
+<p>(Based on Floudas, Non-linear and Mixed-integer Programming, Ch.6)</p>
+<p>The general master program is:</p>
+<div class="math">
+<p><img src="_images/math/cf571c3b852399138b92ed5a2460f13f21a9e34d.png" alt="\begin{eqnarray}
+   \max     &amp;&amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T f_{jt}y_{jt} + z\\
+            &amp; s.t. &amp; \nonumber \\
+            &amp;&amp; z \geq L(x,y,s,\lambda, \nu) \quad \forall \lambda, \nu \\
+            &amp;&amp; 0 \geq L(x,y,s,\bar{\lambda}, \bar{\nu}) \quad \forall
+            \bar{\lambda}, \bar{\nu} \\
+            &amp;&amp; y_{jt} \in \left\{0,1\right\}
+\end{eqnarray}"/></p>
+</div><p>where constraints (2) are <em>optimality cuts</em>, while constraints (3) are
+<em>feasibility cuts</em>. In this work, we ignore the feasility cuts, due to the use
+of initial inventory variables <tt class="docutils literal"><span class="pre">sI</span></tt>. Now, since the above formulation
+requires the definition of all the possible value of <img class="math" src="_images/math/1ab0134b6e0837594649c75a2ed83cfd85a2d03d.png" alt="\lambda"/> and
+<img class="math" src="_images/math/126e84ba38f7dece5f0ad64e929b9588b20f6440.png" alt="\mu"/>, we solve a <strong>relaxation</strong> of the master problem. Therefore, at
+every iteration, the master provides a <strong>lower bound</strong> of the optimal value.</p>
+<p>The master contains, as constraints, two inner optimization problems. We
+express the inner minimization problem in terms of <strong>support function</strong>, i.e</p>
+<div class="math">
+<p><img src="_images/math/732bed19a686bf3d5547062976f5fa2de7306a3f.png" alt="\xi (y,\lambda, \nu) = \min_{x \in X} L(x,y,\lambda, \nu)"/></p>
+</div><p>Using ideas from Geoffrion (1972), we consider the case of linearly separable
+functions in <img class="math" src="_images/math/188c175aac0a8a9c22499336711b5d7256407254.png" alt="x"/> and <img class="math" src="_images/math/b124ff74afb0914bb434e8fb849eb56d734412f8.png" alt="y"/>, i.e., the objective function
+<img class="math" src="_images/math/ffff1d6f584601767db4e06b7c6e648c87a7a00a.png" alt="f(x,y)"/> and the constraints <img class="math" src="_images/math/dc31782c97f9ec5c4bc8e641ac31cd8b1df39fa8.png" alt="g_k(x,y)"/> can be separated. In this
+case, the optimalit cut is:</p>
+<div class="math">
+<p><img src="_images/math/48d6ec798ffe0c7d3eb49369339b5bf88a2a8f75.png" alt="z \geq \displaystyle \sum_{j=1}^n \sum_{t=1}^T \left(-m_{jt}\lambda_t +
+M\nu_{jt} \right)\times \left( y_{jt} - y_{jt}^*\right) + z_{s}"/></p>
+</div><p>where <img class="math" src="_images/math/6b2b84ed9a056278194c56655e989af3790f6dc7.png" alt="z_{s}"/> is the optimal objective function value of the last
+subproblem, and <img class="math" src="_images/math/c33e96850f68f20eb8846d19bddf7cd92174c716.png" alt="y^*"/> indicates the current optimal solution of the
+master problem.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">The dual values have positive sign here, since they are treated as Lagrangean multipliers (this is the reason why the sign is reversed.)</p>
+</div>
+</div>
+</div>
+<div class="section" id="how-to-run-this-code">
+<h2>How to Run This Code<a class="headerlink" href="#how-to-run-this-code" title="Permalink to this headline">¶</a></h2>
+<p>See <a class="reference internal" href="#clspBenders.parseCommandLine" title="clspBenders.parseCommandLine"><tt class="xref py py-func docutils literal"><span class="pre">parseCommandLine()</span></tt></a>.</p>
+</div>
+<div class="section" id="history">
+<h2>History<a class="headerlink" href="#history" title="Permalink to this headline">¶</a></h2>
+<p>15.03.17:</p>
+<blockquote>
+<div>The problem seems to be that the lower bound provided by the master is not
+tight. I attempted to tighten the bound, by adding constraints linking
+(somehow) the variables <img class="math" src="_images/math/7e65b69d8d4a3093c7896dd1ab16b1966fcde877.png" alt="y_{jt}"/> with <img class="math" src="_images/math/54af3546ece177debc6a3d3c79d416ef05016e94.png" alt="x_{jt}"/>, but no
+improvement is observed. I tried a constraint that ensures that the number
+of <img class="math" src="_images/math/b124ff74afb0914bb434e8fb849eb56d734412f8.png" alt="y"/> variables set to 1 is enough to covere the total demand. The
+constraint seems to be correct, but no improvement is observed with respect
+to the lower bound of the master.</div></blockquote>
+<dl class="class">
+<dt id="clspBenders.BendersLazyConsCallback">
+<em class="property">class </em><tt class="descclassname">clspBenders.</tt><tt class="descname">BendersLazyConsCallback</tt><big>(</big><em>env</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#BendersLazyConsCallback"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.BendersLazyConsCallback" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">cplex.callbacks.LazyConstraintCallback</span></tt></p>
+<p>This is the LazyConstraintCallback of cplex. We implement Benders algorithm
+via callback. That it, the master is solved within a branch and bound
+framework and, every time a new master solution is obtained, the callback
+is used to:</p>
+<ul class="simple">
+<li>get the master solution <img class="math" src="_images/math/b124ff74afb0914bb434e8fb849eb56d734412f8.png" alt="y"/></li>
+<li>pass it to the subproblem to obtain <img class="math" src="_images/math/24cbfcb15f060dfe37714f32b8b9e68e59f6b860.png" alt="\phi(y)"/></li>
+<li>get the dual values and define Benders cut</li>
+<li>add the cut to the master</li>
+<li>give control back to cplex</li>
+</ul>
+</dd></dl>
+
+<dl class="class">
+<dt id="clspBenders.Instance">
+<em class="property">class </em><tt class="descclassname">clspBenders.</tt><tt class="descname">Instance</tt><big>(</big><em>inputfile</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#Instance"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.Instance" title="Permalink to this definition">¶</a></dt>
+<dd><p>Class used to read the instance from a disk file.
+Instances are obtained from Trigeiro. We also compute a tight value for the
+big M constant, as well as a cumulative demand value for t to T.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="clspBenders.MIP">
+<em class="property">class </em><tt class="descclassname">clspBenders.</tt><tt class="descname">MIP</tt><big>(</big><em>inp</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#MIP"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.MIP" title="Permalink to this definition">¶</a></dt>
+<dd><p>Define the full model and solve it using cplex. We use this class to
+compute optimal values of the full MIP models and compare them, along with
+the achieve performance, with the Benders approach.</p>
+<dl class="method">
+<dt id="clspBenders.MIP.solve">
+<tt class="descname">solve</tt><big>(</big><em>inp</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#MIP.solve"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.MIP.solve" title="Permalink to this definition">¶</a></dt>
+<dd><p>Solve MIMPLS using cplex branch and bound.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="clspBenders.WorkerLP">
+<em class="property">class </em><tt class="descclassname">clspBenders.</tt><tt class="descname">WorkerLP</tt><big>(</big><em>inp</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#WorkerLP"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.WorkerLP" title="Permalink to this definition">¶</a></dt>
+<dd><p>Define and solve the subproblem. We initilize the subproblem with the right
+hand side values of the constraints to zero, since we assume the initial 
+values of <img class="math" src="_images/math/7e65b69d8d4a3093c7896dd1ab16b1966fcde877.png" alt="y_{jt}"/> to be equal to zero. Next, within the
+<tt class="docutils literal"><span class="pre">separate()</span></tt> function, we define the rhs values to the correct values,
+depending on the solution obtained from the master.</p>
+<p>Cplex requires the presolve reductions to be turned off, using:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">reduce</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>In addition, we need to ensure that the LP is <em>not</em> solved using the
+interior point method, otherwise dual values won&#8217;t be available. We can
+either use primal simplex or dual simplex.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p>The subproblem constraints should be defined with a name, in
+order to be able to recall the precise name of each constraint when we want
+to obtain the dual values. Briefly, we need to:</p>
+<ul class="last">
+<li><p class="first">define a unique name for each constraint, e.g., <tt class="docutils literal"><span class="pre">capacity.t</span></tt> for each t</p>
+</li>
+<li><p class="first">store such names in a vector of names, e.g,:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">lCapacity</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+</pre></div>
+</div>
+</li>
+<li><p class="first">get the dual values using:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">dCapacity</span> <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_dual_values</span><span class="p">(</span><span class="n">lCapacity</span><span class="p">)</span> 
+</pre></div>
+</div>
+</li>
+</ul>
+</div>
+<dl class="method">
+<dt id="clspBenders.WorkerLP.separate">
+<tt class="descname">separate</tt><big>(</big><em>inp</em>, <em>ySol</em>, <em>zHat</em>, <em>y_ilo</em>, <em>z_ilo</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#WorkerLP.separate"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.WorkerLP.separate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Here is were Benders cut is obtained and passed to the master.</p>
+<p>The following steps describe the algorithm:</p>
+<ul>
+<li><dl class="first docutils">
+<dt>update rhs values of the subproblem, i.e., using the current optimal</dt>
+<dd><p class="first last">solution of the master problem <img class="math" src="_images/math/c33e96850f68f20eb8846d19bddf7cd92174c716.png" alt="y^*"/></p>
+</dd>
+</dl>
+</li>
+<li><p class="first">solve the subproblem</p>
+</li>
+<li><p class="first">get the dual values <img class="math" src="_images/math/a28e404e76b0c6a2ee03ebc4e3a3ad8c05c8c893.png" alt="\lambda, \nu"/></p>
+</li>
+<li><p class="first">generate cut (lhs and rhs) and store them in a constraint structure</p>
+</li>
+<li><p class="first">pass the cut to the master</p>
+</li>
+</ul>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="function">
+<dt id="clspBenders.createMaster">
+<tt class="descclassname">clspBenders.</tt><tt class="descname">createMaster</tt><big>(</big><em>inp</em>, <em>cpx</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#createMaster"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.createMaster" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create benders master problem. In reality, this is a <em>relaxation</em> of the
+master, to which we progressively add cuts.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">The master problem provides a <strong>lower bound</strong> to the optimal
+solution.</p>
+</div>
+<p>Here we try different methods to tighen the lower bound.</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="clspBenders.main">
+<tt class="descclassname">clspBenders.</tt><tt class="descname">main</tt><big>(</big><em>argv</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#main"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.main" title="Permalink to this definition">¶</a></dt>
+<dd><p>Entry point.</p>
+<p>We first parse the command line, then reading the instance from a disk
+file.</p>
+<p>The relevant part is the registration of the callback, obtained via:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">lazyBenders</span> <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">register_callback</span><span class="p">(</span><span class="n">BendersLazyConsCallback</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="function">
+<dt id="clspBenders.parseCommandLine">
+<tt class="descclassname">clspBenders.</tt><tt class="descname">parseCommandLine</tt><big>(</big><em>argv</em><big>)</big><a class="reference internal" href="_modules/clspBenders.html#parseCommandLine"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#clspBenders.parseCommandLine" title="Permalink to this definition">¶</a></dt>
+<dd><p>Parse command line. Options are:</p>
+<table class="docutils option-list" frame="void" rules="none">
+<col class="option" />
+<col class="description" />
+<tbody valign="top">
+<tr><td class="option-group">
+<kbd><span class="option">-h <var>help</var></span></kbd></td>
+<td>usage help</td></tr>
+<tr><td class="option-group">
+<kbd><span class="option">-i <var>inputfile</var></span></kbd></td>
+<td>instance file name</td></tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">clspBenders module</a><ul>
+<li><a class="reference internal" href="#introduction">Introduction</a><ul>
+<li><a class="reference internal" href="#master-problem">Master Problem</a></li>
+<li><a class="reference internal" href="#subproblem">Subproblem</a></li>
+<li><a class="reference internal" href="#alternative-formulation-based-on-the-support-function">Alternative Formulation Based on the Support Function</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#how-to-run-this-code">How to Run This Code</a></li>
+<li><a class="reference internal" href="#history">History</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">Welcome to MIMPLS Benders documentation!</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="conf.html"
+                        title="next chapter">conf module</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/clspBenders.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="conf.html" title="conf module"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Welcome to MIMPLS Benders documentation!"
+             >previous</a> |</li>
+        <li><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2017, Marco Caserta.
+      Last updated on Mar 20, 2017.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.2.
+    </div>
+  </body>
+</html>

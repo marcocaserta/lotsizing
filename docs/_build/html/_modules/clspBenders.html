@@ -1,0 +1,1041 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>clspBenders &mdash; MIMPLS Benders 1.0.0 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '1.0.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="MIMPLS Benders 1.0.0 documentation" href="../index.html" />
+    <link rel="up" title="Module code" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for clspBenders</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/python</span>
+<span class="sd">&quot;&quot;&quot; </span>
+<span class="sd">===========================================================================</span>
+
+<span class="sd">:Filename: clspBenders.py</span>
+<span class="sd">:Author: marco caserta</span>
+<span class="sd">:Date: 09.03.2017</span>
+<span class="sd">:Last Update: |date|</span>
+
+<span class="sd">.. |date| date:: %d.%m.%y</span>
+<span class="sd">.. |time| date:: %H:%M</span>
+
+<span class="sd">Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)</span>
+
+<span class="sd">(This document was generated on |date| at |time|.)</span>
+
+<span class="sd">.. this is just a comment</span>
+
+<span class="sd">===========================================================================</span>
+
+<span class="sd">   This program is free software; you can redistribute it and/or modify it</span>
+<span class="sd">   under the terms of the GNU General Public License as published by the Free</span>
+<span class="sd">   Software Foundation; either version 2 of the License, or (at your option)</span>
+<span class="sd">   any later version.                                   </span>
+<span class="sd">                                                                         </span>
+<span class="sd">   This program is distributed in the hope that it will be useful, but WITHOUT</span>
+<span class="sd">   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or</span>
+<span class="sd">   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for</span>
+<span class="sd">   more details.                          </span>
+<span class="sd">                                                                         </span>
+<span class="sd">   You should have received a copy of the GNU General Public License along with</span>
+<span class="sd">   this program; if not, write to the Free Software Foundation, Inc., 59 Temple</span>
+<span class="sd">   Place - Suite 330, Boston, MA  02111-1307, USA.             </span>
+
+<span class="sd">===========================================================================</span>
+
+<span class="sd">Introduction</span>
+<span class="sd">------------</span>
+
+<span class="sd">This code implements a simple benders decomposition scheme for the </span>
+<span class="sd">multi-item multi-period capacitated lot sizing problem. Benders cuts are added </span>
+<span class="sd">via LazyConstraintCallback(). The case of an infeasibility cut is not</span>
+<span class="sd">considered, since the subproblem is always feasible (due to the possibility</span>
+<span class="sd">to choose an arbitrarily large value for the initial inventory level.) This</span>
+<span class="sd">should be improved adding a cut based on extreme rays.</span>
+
+<span class="sd">The following is a formulation for the MIMPLS:</span>
+
+<span class="sd">.. math ::</span>
+<span class="sd">    :nowrap:</span>
+
+<span class="sd">    \\begin{eqnarray}</span>
+<span class="sd">       \max     &amp; &amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T (f_{jt}y_{jt} +</span>
+<span class="sd">        c_{jt}x_{jt} + h_{jt}s_{jt}) \\\\</span>
+<span class="sd">                &amp; s.t. &amp; \\nonumber \\\\</span>
+<span class="sd">                &amp;&amp; \displaystyle \sum_{j=1}^n a_{jt}x_{jt}+m_{jt}y_{jt} \leq</span>
+<span class="sd">                b_t, \quad \\forall t \\\\</span>
+<span class="sd">                &amp;&amp; x_{jt} + s_{jt-1} - s_{jt} = d_{jt}, \quad \\forall j,t \\\\</span>
+<span class="sd">                &amp;&amp; x_{jt} \leq M y_{jt}, \quad \\forall j,t \\\\</span>
+<span class="sd">                &amp;&amp; y_{jt} \in \left\{0,1\\right\}, x_{jt}, s_{jt} \geq 0</span>
+<span class="sd">    \end{eqnarray}</span>
+
+<span class="sd">To address the problem using Benders decomposition, we define a master, which</span>
+<span class="sd">includes the *difficult* binary variables :math:`y_{jt}`, and a subproblem, </span>
+<span class="sd">which deals with the continuous variables :math:`x_{jt}, s_{jt}`.</span>
+
+<span class="sd">Master Problem</span>
+<span class="sd">~~~~~~~~~~~~~~</span>
+
+<span class="sd">The master is:</span>
+
+<span class="sd">.. math ::</span>
+<span class="sd">    :nowrap:</span>
+
+<span class="sd">    \\begin{eqnarray}</span>
+<span class="sd">       \max     &amp;&amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T f_{jt}y_{jt} + z\\\\</span>
+<span class="sd">                &amp; s.t. &amp; \\nonumber \\\\</span>
+<span class="sd">                &amp;&amp; z \geq \phi(\mathbf{y}) \\\\</span>
+<span class="sd">                &amp;&amp; y_{jt} \in \left\{0,1\\right\}</span>
+<span class="sd">    \end{eqnarray}</span>
+
+<span class="sd">where :math:`\phi(\mathbf{y})` is the best possible cost obtained for a given </span>
+<span class="sd">:math:`\mathbf{y}`.</span>
+
+<span class="sd">Subproblem</span>
+<span class="sd">~~~~~~~~~~</span>
+
+<span class="sd">Given a solution to the master problem :math:`\mathbf{y}^*`, we define a primal</span>
+<span class="sd">subproblem as:</span>
+
+<span class="sd">.. math ::</span>
+<span class="sd">    :nowrap:</span>
+
+<span class="sd">    \\begin{eqnarray}</span>
+<span class="sd">       \max     &amp; &amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T c_{jt}x_{jt} + h_{jt}s_{jt} \\\\</span>
+<span class="sd">                &amp; s.t. &amp; \\nonumber \\\\</span>
+<span class="sd">                &amp;&amp; \displaystyle \sum_{j=1}^n a_{jt}x_{jt}\leq</span>
+<span class="sd">                b_t - m_{jt}y_{jt}^* , \quad \\forall t \\\\ </span>
+<span class="sd">                &amp;&amp; x_{jt} + s_{jt-1} - s_{jt} = d_{jt}, \quad \\forall j,t \\\\</span>
+<span class="sd">                &amp;&amp; x_{jt} \leq M y_{jt}^*, \quad \\forall j,t \\\\</span>
+<span class="sd">                &amp;&amp; x_{jt}, s_{jt} \geq 0</span>
+<span class="sd">    \end{eqnarray}</span>
+
+<span class="sd">Note that the subproblem is an LP and, therefore, can easily be solved using </span>
+<span class="sd">cplex. Once the subproblem is solved, we obtain the optimal dual values. </span>
+
+<span class="sd">Assume we have:</span>
+
+<span class="sd">* :math:`\lambda_t`: The dual values of the capacity constraints (2)</span>
+<span class="sd">* :math:`\omega_{jt}`: The dual values of the demand constraints (3)</span>
+<span class="sd">* :math:`\\nu{jt}`: The dual values of the logical constraints (4)</span>
+
+<span class="sd">Then, we write the benders cut as follows:</span>
+
+<span class="sd">.. math ::</span>
+<span class="sd">    </span>
+<span class="sd">    \displaystyle z \geq \sum_{t=1}^T \left( b_t - \sum_{j=1}^n m_{jt}y_{jt} \\right)</span>
+<span class="sd">    + \sum_{j=1}^n \sum_{t=1}^T d_{jt}\omega_{jt} + \sum_{j=1}^n \sum_{t=1}^T</span>
+<span class="sd">    M\\nu_{jt}y_{jt}</span>
+
+<span class="sd">    \sum_{j=1}^n \sum_{t=1}^T y_{jt} \left(M\\nu_{jt} - \lambda_t m_{jt} \\right) -z \leq</span>
+<span class="sd">    - \sum_{t=1}^t \lambda_t b_t - \sum_{j=1}^n \sum_{t=1}^T \omega_{jt} d_{jt}</span>
+
+
+<span class="sd">Alternative Formulation Based on the Support Function</span>
+<span class="sd">~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</span>
+
+<span class="sd">(Based on Floudas, Non-linear and Mixed-integer Programming, Ch.6)</span>
+
+<span class="sd">The general master program is:</span>
+
+<span class="sd">.. math ::</span>
+<span class="sd">    :nowrap:</span>
+
+<span class="sd">    \\begin{eqnarray}</span>
+<span class="sd">       \max     &amp;&amp; \displaystyle \sum_{j=1}^n \sum_{t=1}^T f_{jt}y_{jt} + z\\\\</span>
+<span class="sd">                &amp; s.t. &amp; \\nonumber \\\\</span>
+<span class="sd">                &amp;&amp; z \geq L(x,y,s,\lambda, \\nu) \quad \\forall \lambda, \\nu \\\\</span>
+<span class="sd">                &amp;&amp; 0 \geq L(x,y,s,\\bar{\lambda}, \\bar{\\nu}) \quad \\forall</span>
+<span class="sd">                \\bar{\lambda}, \\bar{\\nu} \\\\</span>
+<span class="sd">                &amp;&amp; y_{jt} \in \left\{0,1\\right\}</span>
+<span class="sd">    \end{eqnarray}</span>
+
+<span class="sd">where constraints (2) are *optimality cuts*, while constraints (3) are</span>
+<span class="sd">*feasibility cuts*. In this work, we ignore the feasility cuts, due to the use</span>
+<span class="sd">of initial inventory variables ``sI``. Now, since the above formulation</span>
+<span class="sd">requires the definition of all the possible value of :math:`\lambda` and</span>
+<span class="sd">:math:`\mu`, we solve a **relaxation** of the master problem. Therefore, at</span>
+<span class="sd">every iteration, the master provides a **lower bound** of the optimal value.</span>
+
+<span class="sd">The master contains, as constraints, two inner optimization problems. We</span>
+<span class="sd">express the inner minimization problem in terms of **support function**, i.e</span>
+
+
+<span class="sd">.. math ::</span>
+<span class="sd">    </span>
+<span class="sd">    \\xi (y,\lambda, \\nu) = \min_{x \in X} L(x,y,\lambda, \\nu)</span>
+
+<span class="sd">Using ideas from Geoffrion (1972), we consider the case of linearly separable</span>
+<span class="sd">functions in :math:`x` and :math:`y`, i.e., the objective function</span>
+<span class="sd">:math:`f(x,y)` and the constraints :math:`g_k(x,y)` can be separated. In this</span>
+<span class="sd">case, the optimalit cut is:</span>
+
+<span class="sd">.. math ::</span>
+
+<span class="sd">    z \geq \displaystyle \sum_{j=1}^n \sum_{t=1}^T \left(-m_{jt}\lambda_t +</span>
+<span class="sd">    M\\nu_{jt} \\right)\\times \left( y_{jt} - y_{jt}^*\\right) + z_{s}</span>
+
+<span class="sd">where :math:`z_{s}` is the optimal objective function value of the last</span>
+<span class="sd">subproblem, and :math:`y^*` indicates the current optimal solution of the</span>
+<span class="sd">master problem. </span>
+
+<span class="sd">.. note:: The dual values have positive sign here, since they are treated as Lagrangean multipliers (this is the reason why the sign is reversed.)</span>
+
+<span class="sd">How to Run This Code </span>
+<span class="sd">--------------------</span>
+
+
+<span class="sd">See :func:`parseCommandLine()`.</span>
+
+
+<span class="sd">History</span>
+<span class="sd">-------</span>
+
+<span class="sd">15.03.17: </span>
+
+<span class="sd">    The problem seems to be that the lower bound provided by the master is not</span>
+<span class="sd">    tight. I attempted to tighten the bound, by adding constraints linking</span>
+<span class="sd">    (somehow) the variables :math:`y_{jt}` with :math:`x_{jt}`, but no</span>
+<span class="sd">    improvement is observed. I tried a constraint that ensures that the number</span>
+<span class="sd">    of :math:`y` variables set to 1 is enough to covere the total demand. The</span>
+<span class="sd">    constraint seems to be correct, but no improvement is observed with respect</span>
+<span class="sd">    to the lower bound of the master.</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">print_function</span>
+
+<span class="kn">import</span> <span class="nn">sys</span><span class="o">,</span> <span class="nn">getopt</span> 
+<span class="kn">import</span> <span class="nn">math</span> 
+<span class="kn">import</span> <span class="nn">time</span> 
+<span class="kn">import</span> <span class="nn">cplex</span> 
+<span class="kn">from</span> <span class="nn">cplex.callbacks</span> <span class="kn">import</span> <span class="n">UserCutCallback</span><span class="p">,</span> <span class="n">LazyConstraintCallback</span> 
+<span class="kn">from</span> <span class="nn">cplex.exceptions</span> <span class="kn">import</span> <span class="n">CplexError</span>
+
+<span class="n">_INFTY</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">float_info</span><span class="o">.</span><span class="n">max</span> 
+<span class="n">_EPSI</span>  <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">float_info</span><span class="o">.</span><span class="n">epsilon</span>
+
+<span class="n">inputfile</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+
+<span class="c">#  we set the master variables as global, while the subproblem vars are local</span>
+<span class="n">z_ilo</span>     <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+<span class="n">y_ilo</span>     <span class="o">=</span> <span class="p">[]</span>
+<span class="n">lCapacity</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">lLogic</span>    <span class="o">=</span> <span class="p">[]</span>
+<span class="n">lDemand</span>   <span class="o">=</span> <span class="p">[]</span>
+
+<span class="n">startTime</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+<span class="n">changeRhs</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">solveSub</span>  <span class="o">=</span> <span class="p">[]</span>
+<span class="n">createCut</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="BendersLazyConsCallback"><a class="viewcode-back" href="../clspBenders.html#clspBenders.BendersLazyConsCallback">[docs]</a><span class="k">class</span> <span class="nc">BendersLazyConsCallback</span><span class="p">(</span><span class="n">LazyConstraintCallback</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This is the LazyConstraintCallback of cplex. We implement Benders algorithm</span>
+<span class="sd">    via callback. That it, the master is solved within a branch and bound</span>
+<span class="sd">    framework and, every time a new master solution is obtained, the callback</span>
+<span class="sd">    is used to:</span>
+
+<span class="sd">    * get the master solution :math:`y`</span>
+<span class="sd">    * pass it to the subproblem to obtain :math:`\phi(y)`</span>
+<span class="sd">    * get the dual values and define Benders cut</span>
+<span class="sd">    * add the cut to the master</span>
+<span class="sd">    * give control back to cplex</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Define the actions to be carried out at every callback.</span>
+
+<span class="sd">        Note that the ``separate`` function of the subproblem is called here.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c"># get data structure (self is the master)</span>
+        <span class="n">worker</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">worker</span>
+        <span class="n">y_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">y_ilo</span>
+        <span class="n">z_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_ilo</span>
+        <span class="n">inp</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">inp</span>
+
+
+        <span class="c">#  get current master solution</span>
+        <span class="n">zHat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">z_ilo</span><span class="p">)</span>
+        <span class="n">ySol</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">ySol</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="n">ySol</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+
+        <span class="c">#  flatten =  [item for sublist in ySol for item in sublist]</span>
+            
+        <span class="c">#  benders cut separation</span>
+        <span class="n">cutType</span> <span class="o">=</span> <span class="n">worker</span><span class="o">.</span><span class="n">separate</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">ySol</span><span class="p">,</span> <span class="n">zHat</span><span class="p">,</span> <span class="n">y_ilo</span><span class="p">,</span> <span class="n">z_ilo</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cutType</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c">#  a = [float(worker.cutLhs.val[i]) for i in xrange(inp.nI*inp.nP)]</span>
+            <span class="c">#  lhsSum = sum([a[i]*flatten[i] for i in xrange(inp.nI*inp.nP)])</span>
+            <span class="c"># add Benders cut to the master</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">constraint</span> <span class="o">=</span> <span class="n">worker</span><span class="o">.</span><span class="n">cutLhs</span><span class="p">,</span>
+                     <span class="n">sense</span>     <span class="o">=</span> <span class="s">&quot;L&quot;</span><span class="p">,</span>
+                     <span class="n">rhs</span>        <span class="o">=</span> <span class="n">worker</span><span class="o">.</span><span class="n">cutRhs</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="parseCommandLine"><a class="viewcode-back" href="../clspBenders.html#clspBenders.parseCommandLine">[docs]</a><span class="k">def</span> <span class="nf">parseCommandLine</span><span class="p">(</span><span class="n">argv</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    .. func:parseCommandLine()</span>
+
+<span class="sd">    Parse command line. Options are:</span>
+
+<span class="sd">    -h help         usage help</span>
+
+<span class="sd">    -i inputfile    instance file name</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">inputfile</span>
+    
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">opts</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">getopt</span><span class="o">.</span><span class="n">getopt</span><span class="p">(</span><span class="n">argv</span><span class="p">,</span> <span class="s">&quot;hi:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;help&quot;</span><span class="p">,</span><span class="s">&quot;ifile=&quot;</span><span class="p">])</span>
+    <span class="k">except</span> <span class="n">getopt</span><span class="o">.</span><span class="n">GetoptError</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;Command Line Error. Usage : python cflp.py -i &lt;inputfile&gt;&quot;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">opt</span><span class="p">,</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">opts</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&quot;-h&quot;</span><span class="p">,</span> <span class="s">&quot;--help&quot;</span><span class="p">):</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;Usage : python cflp.py -i &lt;inputfile&gt; &quot;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&quot;-i&quot;</span><span class="p">,</span> <span class="s">&quot;--ifile&quot;</span><span class="p">):</span>
+            <span class="n">inputfile</span> <span class="o">=</span> <span class="n">arg</span>
+</div>
+<div class="viewcode-block" id="Instance"><a class="viewcode-back" href="../clspBenders.html#clspBenders.Instance">[docs]</a><span class="k">class</span> <span class="nc">Instance</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class used to read the instance from a disk file.</span>
+<span class="sd">    Instances are obtained from Trigeiro. We also compute a tight value for the</span>
+<span class="sd">    big M constant, as well as a cumulative demand value for t to T.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputfile</span><span class="p">):</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">d</span>        <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">c</span>        <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">f</span>        <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">h</span>        <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">a</span>        <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">m</span>        <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">max_prod</span> <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">cap</span>      <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">dcum</span>     <span class="o">=</span> <span class="p">[]</span>
+       <span class="bp">self</span><span class="o">.</span><span class="n">dj</span>       <span class="o">=</span> <span class="p">[]</span>
+
+       <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">inputfile</span><span class="p">)</span> <span class="k">as</span> <span class="n">ff</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nI</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nP</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">split</span><span class="p">()]</span>
+
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;Nr. items and nr. periods = &quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nI</span><span class="p">,</span> <span class="s">&quot; &quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nP</span><span class="p">)</span>
+
+            <span class="n">data</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cap</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">split</span><span class="p">()]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span>
+
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+                
+                <span class="n">data</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+                <span class="n">temp</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">split</span><span class="p">()]</span>
+                <span class="c">#  a = temp[0]*self.nP;</span>
+                <span class="n">a</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span>
+                <span class="n">h</span> <span class="o">=</span> <span class="p">[</span><span class="n">temp</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span>
+                <span class="n">m</span> <span class="o">=</span> <span class="p">[</span><span class="n">temp</span><span class="p">[</span><span class="mi">2</span><span class="p">]]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span>
+                <span class="n">f</span> <span class="o">=</span> <span class="p">[</span><span class="n">temp</span><span class="p">[</span><span class="mi">3</span><span class="p">]]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span>
+                <span class="n">c</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">f</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+           
+            <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+                <span class="n">temp</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">split</span><span class="p">()]</span>
+                <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">temp</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+
+
+       <span class="c">#  compute cumulative demand</span>
+       <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+           <span class="n">aux</span> <span class="o">=</span> <span class="p">[]</span>
+           <span class="n">aux</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+           <span class="n">progr</span> <span class="o">=</span> <span class="mi">0</span>
+           <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+               <span class="n">aux</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">aux</span><span class="p">[</span><span class="n">progr</span><span class="p">]</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">])</span>
+               <span class="n">progr</span> <span class="o">+=</span> <span class="mi">1</span>
+           <span class="bp">self</span><span class="o">.</span><span class="n">dcum</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">reversed</span><span class="p">(</span><span class="n">aux</span><span class="p">)))</span>
+
+                
+       <span class="c"># max production of item j in period t is the minimum between</span>
+       <span class="c"># the limit set by capacity and the cumulative demand</span>
+       <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+           
+           <span class="n">aa</span> <span class="o">=</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cap</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">])</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+           <span class="k">print</span><span class="p">(</span><span class="s">&quot;AA vs CAP &quot;</span><span class="p">,</span> <span class="n">aa</span><span class="p">,</span> <span class="s">&quot; &quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dcum</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+           <span class="bp">self</span><span class="o">.</span><span class="n">max_prod</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="nb">min</span><span class="p">(</span><span class="n">aa</span><span class="p">[</span><span class="n">t</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">dcum</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> \
+           <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span><span class="p">)])</span>
+           <span class="c">#  self.max_prod.append(aa)</span>
+           <span class="bp">self</span><span class="o">.</span><span class="n">dj</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">sum</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nP</span><span class="p">)]))</span>
+
+           <span class="k">print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+
+</div>
+<div class="viewcode-block" id="MIP"><a class="viewcode-back" href="../clspBenders.html#clspBenders.MIP">[docs]</a><span class="k">class</span> <span class="nc">MIP</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Define the full model and solve it using cplex. We use this class to</span>
+<span class="sd">    compute optimal values of the full MIP models and compare them, along with</span>
+<span class="sd">    the achieve performance, with the Benders approach.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        
+        <span class="n">y_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">x_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">s_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">sI</span>    <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="n">cpx</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">Cplex</span><span class="p">()</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_sense</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">sense</span><span class="o">.</span><span class="n">minimize</span><span class="p">)</span>
+
+        <span class="c">#  create variables y_jt</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">y_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;x.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">y_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                  <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                  <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                                  <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;B&quot;</span><span class="p">],</span>
+                                  <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="c">#  create variables x_jt</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">x_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;x.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">c</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                  <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                  <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                  <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;C&quot;</span><span class="p">],</span>
+                                  <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+        <span class="c">#  create variables s_jt</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">s_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;s.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">h</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                  <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                  <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                  <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;C&quot;</span><span class="p">],</span>
+                                  <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="c">#  initial inventory level (avoid infeasibility)</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;sI.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+            <span class="n">sI</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mi">100000</span><span class="p">],</span>
+                              <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                              <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                              <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;C&quot;</span><span class="p">],</span>
+                              <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="c">#  demand constraints</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="c">#  first period</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">sI</span><span class="p">[</span><span class="n">j</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span> 
+            <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;E&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">]])</span>
+            <span class="c">#  periods 2 to T-1</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]]</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span>
+                <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                           <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;E&quot;</span><span class="p">],</span>
+                                           <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]])</span>
+
+            <span class="c">#  last period</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">2</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]</span>
+            <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;E&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">]])</span>
+
+        <span class="c">#  capacity constraints</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">a</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="n">index</span> <span class="o">+</span> <span class="p">[</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">value</span> <span class="o">+</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+            <span class="n">capacity_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">capacity_constraint</span><span class="p">],</span> 
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;L&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">cap</span><span class="p">[</span><span class="n">t</span><span class="p">]])</span>
+
+        <span class="c">#  logic constraints</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">],</span> <span class="n">y_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]]</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="n">inp</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]]</span>
+                <span class="n">logic_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span> <span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">logic_constraint</span><span class="p">],</span>
+                                           <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;L&quot;</span><span class="p">],</span>
+                                           <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpx</span>   <span class="o">=</span> <span class="n">cpx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">y_ilo</span> <span class="o">=</span> <span class="n">y_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span> <span class="o">=</span> <span class="n">x_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span> <span class="o">=</span> <span class="n">s_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sI</span>    <span class="o">=</span> <span class="n">sI</span>
+        
+
+
+<div class="viewcode-block" id="MIP.solve"><a class="viewcode-back" href="../clspBenders.html#clspBenders.MIP.solve">[docs]</a>    <span class="k">def</span> <span class="nf">solve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Solve MIMPLS using cplex branch and bound. </span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        
+        <span class="n">cpx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpx</span>
+        
+        <span class="n">cpx</span><span class="o">.</span><span class="n">solve</span><span class="p">()</span>
+
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;STATUS = &quot;</span><span class="p">,</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">status</span><span class="p">[</span><span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_status</span><span class="p">()])</span>
+        <span class="k">if</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="o">==</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">optimal_tolerance</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;OPT SOL found &quot;</span><span class="p">)</span>
+        
+
+            </div></div>
+<div class="viewcode-block" id="WorkerLP"><a class="viewcode-back" href="../clspBenders.html#clspBenders.WorkerLP">[docs]</a><span class="k">class</span> <span class="nc">WorkerLP</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Define and solve the subproblem. We initilize the subproblem with the right</span>
+<span class="sd">    hand side values of the constraints to zero, since we assume the initial </span>
+<span class="sd">    values of :math:`y_{jt}` to be equal to zero. Next, within the</span>
+<span class="sd">    ``separate()`` function, we define the rhs values to the correct values,</span>
+<span class="sd">    depending on the solution obtained from the master.</span>
+<span class="sd">    </span>
+<span class="sd">    Cplex requires the presolve reductions to be turned off, using::</span>
+
+<span class="sd">        cpx.parameters.preprocessing.reduce.set(0)</span>
+
+<span class="sd">    In addition, we need to ensure that the LP is *not* solved using the</span>
+<span class="sd">    interior point method, otherwise dual values won&#39;t be available. We can</span>
+<span class="sd">    either use primal simplex or dual simplex.</span>
+
+<span class="sd">    .. note :: </span>
+
+<span class="sd">        The subproblem constraints should be defined with a name, in</span>
+<span class="sd">        order to be able to recall the precise name of each constraint when we want</span>
+<span class="sd">        to obtain the dual values. Briefly, we need to:</span>
+<span class="sd">    </span>
+<span class="sd">        * define a unique name for each constraint, e.g., ``capacity.t`` for each t</span>
+<span class="sd">        * store such names in a vector of names, e.g,::</span>
+<span class="sd">            </span>
+<span class="sd">            lCapacity = [&quot;capacity.&quot; + str(t) for t in xrange(inp.nP)]</span>
+
+<span class="sd">        * get the dual values using::</span>
+
+<span class="sd">           dCapacity = cpx.solution.get_dual_values(lCapacity) </span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+
+        <span class="n">x_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">s_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">sI</span>    <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="n">cpx</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">Cplex</span><span class="p">()</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">set_results_stream</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">set_log_stream</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+
+
+        <span class="c"># Turn off the presolve reductions and set the CPLEX optimizer</span>
+        <span class="c"># to solve the worker LP with primal simplex method.</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">reduce</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="c">#  cpx.parameters.lpmethod.set(cpx.parameters.lpmethod.values.primal)</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">lpmethod</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">lpmethod</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">dual</span><span class="p">)</span>
+
+        <span class="n">cpx</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_sense</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">sense</span><span class="o">.</span><span class="n">minimize</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">x_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;x.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">c</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                  <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                  <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                  <span class="c">#  types = [&quot;C&quot;],</span>
+                                  <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">s_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;s.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">h</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                  <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                  <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                  <span class="c">#  types = [&quot;C&quot;],</span>
+                                  <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;sI.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+            <span class="n">sI</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mi">1000</span><span class="p">],</span>
+                              <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                              <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                              <span class="c">#  types = [&quot;C&quot;],</span>
+                              <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+
+        <span class="c">#  demand constraints</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="c">#  first period</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">sI</span><span class="p">[</span><span class="n">j</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span>
+
+            <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.0&quot;</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;E&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">]],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+            <span class="c">#  periods 2 to T-1</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+                <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]]</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span>
+                <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+                <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                           <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;E&quot;</span><span class="p">],</span>
+                                           <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                           <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+            <span class="c">#  last period</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">2</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]</span>
+            <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;E&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">]],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="c">#  capacity constraints</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">a</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+            <span class="n">capacity_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">capacity_constraint</span><span class="p">],</span> 
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;L&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">cap</span><span class="p">[</span><span class="n">t</span><span class="p">]],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="c">#  logic constraints</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;logic.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">logic_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                                    <span class="n">val</span><span class="o">=</span><span class="p">[</span><span class="mf">1.0</span><span class="p">])</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">logic_constraint</span><span class="p">],</span>
+                                           <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;L&quot;</span><span class="p">],</span>
+                                           <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                           <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="c"># define labels for constraints</span>
+        <span class="n">lCapacity</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">lLogic</span>    <span class="o">=</span> <span class="p">[</span><span class="s">&quot;logic.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">lDemand</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpx</span>       <span class="o">=</span> <span class="n">cpx</span> 
+        <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span>     <span class="o">=</span> <span class="n">x_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span>     <span class="o">=</span> <span class="n">s_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sI</span>        <span class="o">=</span> <span class="n">sI</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lCapacity</span> <span class="o">=</span> <span class="n">lCapacity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lLogic</span>    <span class="o">=</span> <span class="n">lLogic</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lDemand</span>   <span class="o">=</span> <span class="n">lDemand</span>
+
+<div class="viewcode-block" id="WorkerLP.separate"><a class="viewcode-back" href="../clspBenders.html#clspBenders.WorkerLP.separate">[docs]</a>    <span class="k">def</span> <span class="nf">separate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">ySol</span><span class="p">,</span> <span class="n">zHat</span><span class="p">,</span> <span class="n">y_ilo</span><span class="p">,</span> <span class="n">z_ilo</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Here is were Benders cut is obtained and passed to the master.</span>
+
+<span class="sd">        The following steps describe the algorithm:</span>
+
+<span class="sd">        * update rhs values of the subproblem, i.e., using the current optimal</span>
+<span class="sd">            solution of the master problem :math:`y^*`</span>
+<span class="sd">        * solve the subproblem</span>
+<span class="sd">        * get the dual values :math:`\lambda, \\nu`</span>
+<span class="sd">        * generate cut (lhs and rhs) and store them in a constraint structure</span>
+<span class="sd">        * pass the cut to the master</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">cutType</span>   <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">cpx</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpx</span>
+        <span class="n">x_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span>
+        <span class="n">s_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span>
+        <span class="n">sI</span>        <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sI</span>
+        <span class="n">lCapacity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lCapacity</span>
+        <span class="n">lLogic</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lLogic</span>
+        <span class="n">lDemand</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lDemand</span>
+
+        <span class="c">#  print(&quot;MASTER SOL :: &quot;)</span>
+        <span class="c">#  for j in xrange(inp.nI):</span>
+        <span class="c">#      aux = [t for t in xrange(inp.nP) if ySol[j][t] &gt;= (1.0-_EPSI)]</span>
+        <span class="c">#      print(&quot;item &quot;, j, &quot; :: &quot;, aux)</span>
+        <span class="c">#  #  raw_input(&quot;aka &quot;)</span>
+
+        <span class="c">#  update rhs values : logic constraints</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;logic.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">ySol</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">-</span><span class="n">_EPSI</span><span class="p">):</span>
+                    <span class="n">rhsValue</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">rhsValue</span> <span class="o">=</span> <span class="mf">0.0</span>
+                <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_rhs</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span> <span class="n">rhsValue</span><span class="p">)</span>
+
+        <span class="c">#  update rhs values : capacity constraints</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">sumY</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">([</span><span class="n">inp</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)</span> <span class="k">if</span> <span class="n">ySol</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">&gt;=</span>
+            <span class="p">(</span><span class="mf">1.0</span><span class="o">-</span><span class="n">_EPSI</span><span class="p">)])</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_rhs</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">cap</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">-</span><span class="n">sumY</span><span class="p">)</span>
+
+
+        <span class="n">cpx</span><span class="o">.</span><span class="n">solve</span><span class="p">()</span>
+
+
+        <span class="c">#  print(&quot;WORKER SOLVED with status :: &quot;,</span>
+        <span class="c">#  cpx.solution.status[cpx.solution.get_status()])</span>
+        <span class="c">#  print(&quot;z(sub) = &quot;, cpx.solution.get_objective_value())</span>
+        <span class="c">#  xSol = []</span>
+        <span class="c">#  sSol = []</span>
+        <span class="c">#  sISol = []</span>
+        <span class="c">#  for j in xrange(inp.nI):</span>
+        <span class="c">#      xSol.append([cpx.solution.get_values(x_ilo[j])])</span>
+        <span class="c">#      sSol.append([cpx.solution.get_values(s_ilo[j])])</span>
+        <span class="c">#</span>
+        <span class="c">#  sISol =cpx.solution.get_values(sI)</span>
+        <span class="c">#</span>
+        <span class="c">#  for j in xrange(inp.nI):</span>
+        <span class="c">#      print(&quot;Item {0:3d} :: ({1:5.0f}) {2}  S = \</span>
+        <span class="c">#      {3}&quot;.format(j,sISol[j],xSol[j],sSol[j]))</span>
+        <span class="c">#</span>
+
+        <span class="k">if</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="o">==</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">optimal</span><span class="p">:</span>
+            <span class="n">cutType</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="n">zSub</span> <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_objective_value</span><span class="p">()</span>
+            <span class="c">#  the solution is feasible (it will always be, due to vars sI)</span>
+            <span class="n">dCapacity</span> <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_dual_values</span><span class="p">(</span><span class="n">lCapacity</span><span class="p">)</span>
+            <span class="n">dLogic</span>    <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_dual_values</span><span class="p">(</span><span class="n">lLogic</span><span class="p">)</span>
+            <span class="n">dDemand</span>   <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_dual_values</span><span class="p">(</span><span class="n">lDemand</span><span class="p">)</span>
+
+            <span class="n">cutVars</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">cutVals</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="n">cutRhs</span> <span class="o">=</span> <span class="o">-</span><span class="n">zSub</span>
+            <span class="n">progr</span>  <span class="o">=</span> <span class="mi">0</span>
+
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                    <span class="n">coeff</span> <span class="o">=</span> <span class="o">-</span><span class="n">inp</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">dCapacity</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span>\
+                    <span class="n">dLogic</span><span class="p">[</span><span class="n">progr</span><span class="p">]</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
+
+                    <span class="n">cutVars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">])</span>
+                    <span class="n">cutVals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">coeff</span><span class="p">)</span>
+
+                    <span class="n">cutRhs</span> <span class="o">+=</span> <span class="n">coeff</span><span class="o">*</span><span class="n">ySol</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
+                    <span class="n">progr</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="n">cutVars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">z_ilo</span><span class="p">)</span>
+            <span class="n">cutVals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">)</span>
+
+
+            
+            <span class="c"># second way of adding Benders cut</span>
+            <span class="c">#  cutRhs = 0.0</span>
+            <span class="c">#  progr  = 0</span>
+            <span class="c">#  for j in xrange(inp.nI):</span>
+            <span class="c">#      for t in xrange(inp.nP):</span>
+            <span class="c">#          coeff = inp.max_prod[j][t]*dLogic[progr]/3.2 - \</span>
+            <span class="c">#          inp.m[j][t]*dCapacity[t]</span>
+            <span class="c">#</span>
+            <span class="c">#          cutVars.append(y_ilo[j][t])</span>
+            <span class="c">#          cutVals.append(coeff)</span>
+            <span class="c">#</span>
+            <span class="c">#          cutRhs -= inp.d[j][t]*dDemand[progr]</span>
+            <span class="c">#</span>
+            <span class="c">#          progr += 1</span>
+            <span class="c">#</span>
+            <span class="c">#  cutVars.append(z_ilo)</span>
+            <span class="c">#  cutVals.append(-1.0)</span>
+
+            <span class="c">#  for t in xrange(inp.nP):</span>
+            <span class="c">#      cutRhs -= inp.cap[t]*dCapacity[t]</span>
+
+
+            <span class="c">#  third way of adding benders cut</span>
+            <span class="n">cpxBeta</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">Cplex</span><span class="p">()</span>
+            <span class="n">cpxBeta</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_sense</span><span class="p">(</span><span class="n">cpxBeta</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">sense</span><span class="o">.</span><span class="n">maximize</span><span class="p">)</span>
+
+            <span class="n">b_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="c">#  create variables y_jt</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+                <span class="n">b_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+                <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+                    <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;b.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                    <span class="n">b_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxBeta</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+                    <span class="n">cpxBeta</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">ySol</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                                          <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="o">-</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                          <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                          <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">b_ilo</span><span class="p">,</span> <span class="s">&quot; THIS IS BETA &quot;</span><span class="p">)</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;rhs = &quot;</span><span class="p">,</span> <span class="n">cutRhs</span><span class="p">)</span>
+
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">b_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="n">ySol</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;I vs V &quot;</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="s">&quot; &quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="n">cBeta</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpxBeta</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">cBeta</span><span class="p">],</span>
+                                           <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;L&quot;</span><span class="p">],</span>
+                                           <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">cutRhs</span><span class="p">])</span>
+
+            <span class="n">cpxBeta</span><span class="o">.</span><span class="n">solve</span><span class="p">()</span>
+
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;This is the classical cut : &quot;</span><span class="p">,</span> <span class="n">cutVals</span><span class="p">)</span>
+            <span class="n">bb</span> <span class="o">=</span> <span class="p">[</span><span class="n">cpxBeta</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">b_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span>
+            <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;This is beta ilo &quot;</span><span class="p">,</span> <span class="n">bb</span><span class="p">)</span>
+
+            <span class="nb">raw_input</span><span class="p">(</span><span class="s">&quot;... just solved little LP &quot;</span><span class="p">)</span>
+                
+            <span class="n">cutLhs</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">cutVars</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">cutVals</span><span class="p">)</span>
+            
+            <span class="bp">self</span><span class="o">.</span><span class="n">cutLhs</span> <span class="o">=</span> <span class="n">cutLhs</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cutRhs</span> <span class="o">=</span> <span class="n">cutRhs</span>
+            <span class="c">#  print(&quot;LHS vs RHS &quot;, cutLhs, &quot; &lt;= &quot;, cutRhs)</span>
+
+            <span class="c">#  raw_input(&quot;read cut ... &quot;)</span>
+            
+
+
+        <span class="k">return</span> <span class="n">cutType</span>
+        
+
+</div></div>
+<div class="viewcode-block" id="createMaster"><a class="viewcode-back" href="../clspBenders.html#clspBenders.createMaster">[docs]</a><span class="k">def</span> <span class="nf">createMaster</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">cpx</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Create benders master problem. In reality, this is a *relaxation* of the</span>
+<span class="sd">    master, to which we progressively add cuts.</span>
+
+<span class="sd">    .. note :: </span>
+<span class="sd">    </span>
+<span class="sd">        The master problem provides a **lower bound** to the optimal</span>
+<span class="sd">        solution. </span>
+
+<span class="sd">    Here we try different methods to tighen the lower bound.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+   
+    <span class="k">global</span> <span class="n">z_ilo</span>
+    <span class="k">global</span> <span class="n">y_ilo</span>
+    <span class="n">cpx</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_sense</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">sense</span><span class="o">.</span><span class="n">minimize</span><span class="p">)</span>
+    <span class="c">#  create variables y_jt</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+        <span class="n">y_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">varName</span> <span class="o">=</span> <span class="s">&quot;y.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">y_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+            <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]],</span>
+                              <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                              <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                              <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;B&quot;</span><span class="p">],</span>
+                              <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+    <span class="c">#  z_ilo.append(cpx.variables.get_num())</span>
+    <span class="n">z_ilo</span> <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">()</span>
+    <span class="n">cpx</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">],</span>
+                      <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                      <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                      <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;C&quot;</span><span class="p">],</span>
+                      <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;zHat&quot;</span><span class="p">])</span>
+    
+    <span class="c"># add cumulative constraints</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">cumulative_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">constrName</span> <span class="o">=</span> <span class="s">&quot;cumulative.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">cumulative_constraint</span><span class="p">],</span>
+                                   <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s">&quot;G&quot;</span><span class="p">],</span>
+                                   <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">dj</span><span class="p">[</span><span class="n">j</span><span class="p">]],</span>
+                                   <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+    <span class="c">#  for j in xrange(inp.nI):</span>
+    <span class="c">#      index = [y_ilo[j][t] for t in xrange(inp.nP)]</span>
+    <span class="c">#      value = [1.0]*inp.nP</span>
+    <span class="c">#      ones_constraint = cplex.SparsePair(ind=index, val=value)</span>
+    <span class="c">#      constrName = &quot;sum.&quot; + str(j)</span>
+    <span class="c">#      cpx.linear_constraints.add(lin_expr = [ones_constraint],</span>
+    <span class="c">#                                 senses   = [&quot;G&quot;],</span>
+    <span class="c">#                                 rhs      = [2.0],</span>
+    <span class="c">#                                 names    = [constrName])</span>
+
+
+
+    </div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../clspBenders.html#clspBenders.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">argv</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Entry point. </span>
+
+<span class="sd">    We first parse the command line, then reading the instance from a disk</span>
+<span class="sd">    file.</span>
+
+<span class="sd">    The relevant part is the registration of the callback, obtained via::</span>
+
+<span class="sd">         lazyBenders = cpx.register_callback(BendersLazyConsCallback)</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">parseCommandLine</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
+    <span class="n">inp</span> <span class="o">=</span> <span class="n">Instance</span><span class="p">(</span><span class="n">inputfile</span><span class="p">)</span>
+
+    <span class="n">cpx</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">Cplex</span><span class="p">()</span>
+
+    <span class="c"># activate this part if we want to solve the original MIP via cplex</span>
+    <span class="c">#  mip = MIP(inp)</span>
+    <span class="c">#  mip.solve(inp)</span>
+
+    <span class="c"># create master and worker (subproblem)</span>
+    <span class="n">createMaster</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">cpx</span><span class="p">)</span>
+    <span class="n">worker</span> <span class="o">=</span> <span class="n">WorkerLP</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+
+    <span class="c"># Set up cplex parameters to use the cut callback for separating</span>
+    <span class="c"># Benders&#39; cuts</span>
+    <span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">presolve</span><span class="o">.</span><span class="n">set</span><span class="p">(</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">presolve</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">off</span><span class="p">)</span>
+
+    <span class="c"># Set the maximum number of threads to 1.</span>
+    <span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">threads</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c"># Turn on traditional search for use with control callbacks</span>
+    <span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">mip</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">search</span><span class="o">.</span><span class="n">set</span><span class="p">(</span>
+        <span class="n">cpx</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">mip</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">search</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">traditional</span><span class="p">)</span>
+
+    <span class="c"># register callback</span>
+    <span class="n">lazyBenders</span> <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">register_callback</span><span class="p">(</span><span class="n">BendersLazyConsCallback</span><span class="p">)</span>
+    <span class="n">lazyBenders</span><span class="o">.</span><span class="n">inp</span>   <span class="o">=</span> <span class="n">inp</span>
+    <span class="n">lazyBenders</span><span class="o">.</span><span class="n">z_ilo</span> <span class="o">=</span> <span class="n">z_ilo</span>
+    <span class="n">lazyBenders</span><span class="o">.</span><span class="n">y_ilo</span> <span class="o">=</span> <span class="n">y_ilo</span>
+    <span class="n">lazyBenders</span><span class="o">.</span><span class="n">worker</span> <span class="o">=</span> <span class="n">worker</span>
+
+    <span class="n">startTime</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="c"># Solve the model</span>
+    <span class="n">cpx</span><span class="o">.</span><span class="n">solve</span><span class="p">()</span>
+
+    <span class="n">solution</span> <span class="o">=</span> <span class="n">cpx</span><span class="o">.</span><span class="n">solution</span>
+    <span class="k">print</span><span class="p">()</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;Solution status: &quot;</span><span class="p">,</span> <span class="n">solution</span><span class="o">.</span><span class="n">status</span><span class="p">[</span><span class="n">solution</span><span class="o">.</span><span class="n">get_status</span><span class="p">()])</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;Objective value: &quot;</span><span class="p">,</span> <span class="n">solution</span><span class="o">.</span><span class="n">get_objective_value</span><span class="p">())</span>
+
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;Thus time is &quot;</span><span class="p">,</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">startTime</span><span class="p">)</span>
+
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2017, Marco Caserta.
+      Last updated on Mar 20, 2017.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.2.
+    </div>
+  </body>
+</html>
