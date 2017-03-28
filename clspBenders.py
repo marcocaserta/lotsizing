@@ -217,7 +217,7 @@ _INFTY = sys.float_info.max
 _EPSI  = sys.float_info.epsilon
 
 inputfile = ""
-usercuts  = ""
+userCuts  = "0"
 
 #  we set the master variables as global, while the subproblem vars are local
 z_ilo     = -1
@@ -226,6 +226,8 @@ y_ilo     = []
 lCapacity = []
 lLogic    = []
 lDemand   = []
+
+yRef = []
 
 startTime = -1;
 
@@ -322,11 +324,11 @@ class BendersUserCutCallback(UserCutCallback):
         #  cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo, xcSol, xc_ilo)
         cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo)
         if cutType > 0:
-            a = [float(worker.cutLhs.val[i]) for i in range(inp.nI*inp.nP)]
-            lhsSum = sum([a[i]*flatten[i] for i in range(inp.nI*inp.nP)])
-            print("LhsSum = ", lhsSum , " vs ", worker.cutRhs)
-            input(" violated ? ")
-            if (lhsSum > worker.cutRhs):
+            #  a = [float(worker.cutLhs.val[i]) for i in range(inp.nI*inp.nP)]
+            #  lhsSum = sum([a[i]*flatten[i] for i in range(inp.nI*inp.nP)])
+            #  print("LhsSum = ", lhsSum , " vs ", worker.cutRhs)
+            #  input(" violated ? ")
+            #  if (lhsSum > worker.cutRhs):
                 # add Benders cut to the master
                 self.add(cut       = worker.cutLhs,
                          sense     = "L",
@@ -430,16 +432,14 @@ class Instance:
        # the limit set by capacity and the cumulative demand
        for j in range(self.nI):
            #  aa = [math.floor( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
-           aa = [( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
-           print("AA vs CAP ", aa, " ", self.dcum[j])
+           #  aa = [( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
+           #  print("AA vs CAP ", aa, " ", self.dcum[j])
            #  self.max_prod.append([min(aa[t],self.dcum[j][t]) for t in \
            #  range(self.nP)])
            self.max_prod.append([self.dcum[j][t] for t in \
            range(self.nP)])
            #  self.max_prod.append(aa)
            self.dj.append(sum([self.d[j][t] for t in range(self.nP)]))
-
-           print(self.max_prod[j])
 
 
 class MIP:
@@ -560,6 +560,9 @@ class MIP:
         """
         Solve MIMPLS using cplex branch and bound.
         """
+        global yRef
+
+        y_ilo = self.y_ilo
         cpx = self.cpx
 
         cpx.set_problem_type(cpx.problem_type.LP)
@@ -569,6 +572,10 @@ class MIP:
         if cpx.solution.get_status() == cpx.solution.status.optimal_tolerance\
             or cpx.solution.get_status() == cpx.solution.status.optimal:
             print("OPT SOL found = ", cpx.solution.get_objective_value())
+            for j in range(inp.nI):
+                yRef.append(cpx.solution.get_values(y_ilo[j]))
+
+
 
 class MIPReformulation(MIP):
 
@@ -871,8 +878,7 @@ class WorkerLP:
 
         #  update rhs values : capacity constraints
         for t in range(inp.nP):
-            sumY = sum([inp.m[j][t]*ySol[j][t] for j in range(inp.nI) if ySol[j][t] >=
-            (1.0-_EPSI)])
+            sumY = sum([inp.m[j][t]*ySol[j][t] for j in range(inp.nI)])
             constrName = "capacity." + str(t)
             cpx.linear_constraints.set_rhs(constrName, inp.cap[t]-sumY)
 
@@ -934,6 +940,7 @@ class WorkerLP:
             dLogic    = cpx.solution.get_dual_values(lLogic)
             dDemand   = cpx.solution.get_dual_values(lDemand)
 
+
             #  method 1: generalized benders
             cutRhs = -zSub
             progr  = 0
@@ -971,6 +978,249 @@ class WorkerLP:
             #  cutVals.append(-1.0)
             #  for t in range(inp.nP):
             #      cutRhs -= inp.cap[t]*dCapacity[t]
+
+
+        #  return cut and type
+        cutLhs = cplex.SparsePair(ind=cutVars, val=cutVals)
+
+        self.cutLhs = cutLhs
+        self.cutRhs = cutRhs
+
+        return cutType
+
+
+class WorkerLPReformulation:
+    def __init__(self, inp):
+
+        z_ilo = []
+
+        cpx = cplex.Cplex()
+        cpx.set_results_stream(None)
+        cpx.set_log_stream(None)
+
+
+        # Turn off the presolve reductions and set the CPLEX optimizer
+        # to solve the worker LP with primal simplex method.
+        cpx.parameters.preprocessing.presolve.set(
+                cpx.parameters.preprocessing.presolve.values.off)
+        cpx.parameters.preprocessing.reduce.set(0)
+        #  cpx.parameters.lpmethod.set(cpx.parameters.lpmethod.values.primal)
+        cpx.parameters.lpmethod.set(cpx.parameters.lpmethod.values.dual)
+        cpx.objective.set_sense(cpx.objective.sense.minimize)
+
+        #  create variables z_jts
+        for j in range(inp.nI):
+            z_ilo.append([])
+            for t in range(inp.nP):
+                z_ilo[j].append([])
+                for r in range(inp.nP):
+                    varName = "z." + str(j) + "." + str(t) + "." + str(r)
+                    z_ilo[j][t].append(cpx.variables.get_num())
+                    cpx.variables.add(obj   = [(r-t)*inp.h[j][t]],
+                                      lb    = [0.0],
+                                      ub    = [cplex.infinity],
+                                      names = [varName])
+
+
+        #  capacity constraint
+        for t in range(inp.nP):
+            index = []
+            value = []
+            for j in range(inp.nI):
+                index += [z_ilo[j][t][r] for r in range(t,inp.nP)]
+                value += [inp.a[j][t]]*(inp.nP-t)
+            constrName = "capacity." + str(t)
+            capacity_constraint = cplex.SparsePair(ind=index,val=value)
+            cpx.linear_constraints.add(lin_expr  = [capacity_constraint],
+                                       senses    = ["L"],
+                                       rhs       = [inp.cap[t]],
+                                       names     = [constrName])
+
+        #  demand constraints
+        for j in range(inp.nI):
+            for r in range(inp.nP):
+                index = [z_ilo[j][t][r] for t in range(r+1)]
+                value = [1.0]*(r+1)
+                constrName = "demand." + str(j) + "." + str(r)
+                demand_constraint = cplex.SparsePair(ind=index, val=value)
+                cpx.linear_constraints.add(lin_expr = [demand_constraint],
+                                           senses   = ["E"],
+                                           rhs      = [inp.d[j][r]],
+                                           names    = [constrName])
+        #  logic constraints
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                for r in range(t, inp.nP):
+                    index = [z_ilo[j][t][r]]
+                    value = [1.0]
+                    logic_constraint = cplex.SparsePair(ind =index, val=value)
+                    constrName = "logic."+str(j)+"."+str(t)+"."+str(r)
+                    cpx.linear_constraints.add(lin_expr = [logic_constraint],
+                                               senses   = ["L"],
+                                               rhs      = [0.0],
+                                               names    = [constrName])
+
+        #  cumulative logic constraints
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                index = [z_ilo[j][t][r] for r in range(t,inp.nP)]
+                value = [1.0]*(inp.nP-t)
+                constrName = "cumLogic."+str(j)+"."+str(t)
+                logic_constraint_cum = cplex.SparsePair(ind =index, val=value)
+                cpx.linear_constraints.add(lin_expr = [logic_constraint_cum],
+                                           senses   = ["L"],
+                                           rhs      = [0.0],
+                                           names    = [constrName])
+
+
+        #  set to zero unused variables
+        for j in range(inp.nI):
+            for r in range(inp.nP-1):
+                for t in range(r+1, inp.nP):
+                    cpx.variables.set_upper_bounds(z_ilo[j][t][r], 0.0)
+
+
+        # define labels for constraints
+        lCapacity = ["capacity." + str(t) for t in range(inp.nP)]
+        lDemand   = ["demand." + str(j) + "." + str(t) for j in range(inp.nI)
+        for t in range(inp.nP)]
+        lLogic    = ["logic." + str(j) + "." + str(t) + "." + str(r) \
+        for j in range(inp.nI) for t in range(inp.nP) for r in range(t,inp.nP)]
+        lcumLogic = ["cumLogic." + str(j) + "." + str(t) for j in range(inp.nI)
+        for t in range(inp.nP)]
+
+        self.cpx       = cpx
+        self.z_ilo     = z_ilo
+        self.lCapacity = lCapacity
+        self.lDemand   = lDemand
+        self.lLogic    = lLogic
+        self.lcumLogic = lcumLogic
+
+    def separate(self, inp, ySol, zHat, y_ilo, z_ilo_m):
+        """
+        Here is were Benders cut is obtained and passed to the master.
+
+        The following steps describe the algorithm:
+
+        * update rhs values of the subproblem, i.e., using the current optimal
+            solution of the master problem :math:`y^*`
+        * solve the subproblem
+        * get the dual values :math:`\lambda, \\nu`
+        * generate cut (lhs and rhs) and store them in a constraint structure
+        * pass the cut to the master
+
+        """
+
+        cutType   = 0
+        cpx       = self.cpx
+        z_ilo     = self.z_ilo
+        lCapacity = self.lCapacity
+        lDemand   = self.lDemand
+        lLogic    = self.lLogic
+        lcumLogic = self.lcumLogic
+
+
+        #  update rhs values : logic constraints
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                for r in range(t, inp.nP):
+                    constrName = "logic." + str(j) + "." + str(t) + "." + str(r)
+                    rhsValue = inp.d[j][r]*ySol[j][t]
+                    cpx.linear_constraints.set_rhs(constrName, rhsValue)
+
+        #  update rhs values : capacity constraints
+        for t in range(inp.nP):
+            sumY = sum([inp.m[j][t]*ySol[j][t] for j in range(inp.nI)])
+            constrName = "capacity." + str(t)
+            cpx.linear_constraints.set_rhs(constrName, inp.cap[t]-sumY)
+
+        #  update cumulative capacity
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                constrName = "cumLogic." + str(j) + "." + str(t)
+                rhsValue = inp.max_prod[j][t]*ySol[j][t]
+                cpx.linear_constraints.set_rhs(constrName, rhsValue)
+
+
+        cpx.solve()
+        #  print("STATUS = ", cpx.solution.status[cpx.solution.get_status()])
+        #  print("z_sub  = ", cpx.solution.get_objective_value())
+        #  vars and values for the cut lhs
+        cutVars = []
+        cutVals = []
+
+        if cpx.solution.get_status() == cpx.solution.status.infeasible:
+            cutType = 1
+            #  add extreme ray using Farkas certificate
+            farkas, pp = cpx.solution.advanced.dual_farkas()
+            #  print("[",len(farkas),"] Farkas are : ", farkas, " ** ", pp)
+            progr     = inp.nP
+            index     = range(progr)
+            fCapacity = [farkas[i] for i in index]
+            index     = range(progr,progr+inp.nP*inp.nI)
+            fDemand   = [farkas[i] for i in index]
+            progr    += inp.nP*inp.nI
+            nr        = int( inp.nI*(inp.nP*(inp.nP+1))/2)
+            index     = range(progr, progr+nr)
+            fLogic    = [farkas[i] for i in index]
+            progr    += nr
+            index     = range(progr, progr+inp.nI*inp.nP)
+            fcumLogic = [farkas[i] for i in index]
+
+
+            #  feasibility cut
+            cutRhs  = 0.0
+            counter = 0
+            for j in range(inp.nI):
+                for t in range(inp.nP):
+                    progr = j*inp.nP + t
+                    coeff = inp.max_prod[j][t]*fcumLogic[progr] - \
+                    inp.m[j][t]*fCapacity[t]
+
+                    for r in range(t, inp.nP):
+                        coeff += fLogic[counter]*inp.d[j][r]
+                        counter += 1
+
+                    cutVars.append(y_ilo[j][t])
+                    cutVals.append(coeff)
+                    cutRhs -= inp.d[j][t]*fDemand[progr]
+
+            for t in range(inp.nP):
+                cutRhs -= inp.cap[t]*fCapacity[t]
+
+
+        elif cpx.solution.get_status() == cpx.solution.status.optimal:
+            cutType = 2
+            zSub = cpx.solution.get_objective_value()
+            dCapacity = cpx.solution.get_dual_values(lCapacity)
+            dDemand   = cpx.solution.get_dual_values(lDemand)
+            dLogic    = cpx.solution.get_dual_values(lLogic)
+            dcumLogic = cpx.solution.get_dual_values(lcumLogic)
+
+            # method 2: the "standard" benders
+            cutRhs = 0.0
+            progr  = 0
+            counter = 0
+            for j in range(inp.nI):
+                for t in range(inp.nP):
+                    coeff = inp.max_prod[j][t]*dcumLogic[progr] - \
+                    inp.m[j][t]*dCapacity[t]
+
+                    for r in range(t, inp.nP):
+                        coeff += dLogic[counter]*inp.d[j][r]
+                        counter += 1
+
+                    cutVars.append(y_ilo[j][t])
+                    cutVals.append(coeff)
+
+                    cutRhs -= inp.d[j][t]*dDemand[progr]
+
+                    progr += 1
+
+            cutVars.append(z_ilo_m)
+            cutVals.append(-1.0)
+            for t in range(inp.nP):
+                cutRhs -= inp.cap[t]*dCapacity[t]
 
 
         #  return cut and type
@@ -1053,6 +1303,8 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp):
     _lambda = 0.1
     _alpha  = 0.9
     progr   = 0
+
+    print(" -----> HERE yRef = ", yRef)
 
     cpx.set_problem_type(cpx.problem_type.LP)
     print("Problem type is ", cpx.problem_type[cpx.get_problem_type()])
@@ -1159,18 +1411,16 @@ def main(argv):
     cpx = cplex.Cplex()
 
     # activate this part if we want to solve the original MIP via cplex
-    mip = MIP(inp)
-    mip.solve(inp)
-    input(" ... now reformulation ... ")
-    mip = MIPReformulation(inp)
-    mip.solve(inp)
-
-    exit(123)
-
+    #  mip = MIP(inp)
+    #  mip.solve(inp)
+    #  input(" ... now reformulation ... ")
+    #  mip = MIPReformulation(inp)
+    #  mip.solve(inp)
 
     # create master and worker (subproblem)
     createMaster(inp, cpx)
-    worker = WorkerLP(inp)
+    #  worker = WorkerLP(inp)
+    worker = WorkerLPReformulation(inp)
 
     # Set up cplex parameters to use the cut callback for separating
     # Benders' cuts
