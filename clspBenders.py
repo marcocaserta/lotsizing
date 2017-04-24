@@ -210,6 +210,8 @@ import time
 
 import cplex
 from cplex.callbacks import UserCutCallback, LazyConstraintCallback
+from cplex.callbacks import SolveCallback, SimplexCallback
+
 from cplex.exceptions import CplexError
 
 
@@ -218,18 +220,31 @@ _EPSI  = sys.float_info.epsilon
 
 inputfile = ""
 userCuts  = "0"
+cPercent  = 0.0
 
 #  we set the master variables as global, while the subproblem vars are local
 z_ilo     = -1
 y_ilo     = []
-#  xc_ilo    = []
 lCapacity = []
 lLogic    = []
 lDemand   = []
 
+inout = []
 yRef = []
-
+yPool = []
+nPool = 0
+ubBest = 0.0
 startTime = -1;
+
+class SolveNodeCallback(SimplexCallback):
+    def __call__(self):
+
+        print("I AM here ")
+        #  self.solve()
+
+        print("OBJ ", self.get_objective_value())
+        print("RC", self.get_reduced_costs())
+        input(" ... ")
 
 class BendersLazyConsCallback(LazyConstraintCallback):
     """
@@ -259,9 +274,8 @@ class BendersLazyConsCallback(LazyConstraintCallback):
         worker = self.worker
         y_ilo  = self.y_ilo
         z_ilo  = self.z_ilo
-        #  xc_ilo = self.xc_ilo
         inp    = self.inp
-
+        yFixed = self.yFixed
 
         #  get current master solution
         zHat = self.get_values(z_ilo)
@@ -269,25 +283,110 @@ class BendersLazyConsCallback(LazyConstraintCallback):
         for j in range(inp.nI):
             ySol.append([])
             ySol[j] = self.get_values(y_ilo[j])
-        #  xcSol = self.get_values(xc_ilo)
-
 
         #  flatten =  [item for sublist in ySol for item in sublist]
         #  benders cut separation
-        #  cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo, xcSol, xc_ilo)
         cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo)
         if cutType > 0:
             #  a = [float(worker.cutLhs.val[i]) for i in range(inp.nI*inp.nP)]
             #  lhsSum = sum([a[i]*flatten[i] for i in range(inp.nI*inp.nP)])
             #  print("LhsSum = ", lhsSum , " vs ", worker.cutRhs)
             #  print(lhsSum <= worker.cutRhs)
-            #  input(" violated ? ")
+            #  violated = (lhsSum - worker.cutRhs) > 0.1
+            #  print(" violated ? ", violated)
+            violated = 1
+            if violated:
             # add Benders cut to the master
-            self.add(constraint = worker.cutLhs,
-                     sense     = "L",
-                     rhs        = worker.cutRhs,
-                     use        = 0)
-            #  note use=1 allows to purge a cut with slack
+                self.add(constraint = worker.cutLhs,
+                         sense     = "L",
+                         rhs        = worker.cutRhs,
+                         use        = 0)
+
+
+        zLP = self.get_best_objective_value()
+        #  print("here ", zLP)
+        #  input("...")
+        if self.solved == 0:
+            cpxCloneLP = cplex.Cplex(cpx)
+            cpxCloneLP.set_problem_type(cpxCloneLP.problem_type.LP)
+            cpxCloneLP.solve()
+            self.solved = 1
+
+            for j in range(inp.nI):
+                self.rc.append(cpxCloneLP.solution.get_reduced_costs(y_ilo[j]))
+            #  add cut here ??
+
+            #  print("Before adding cut to master : ", cpx.linear_constraints.get_num())
+            #  cutType = worker.separate(inp, yRef, 0.0, y_ilo, z_ilo)
+            #  print(worker.cutLhs, " <= ", worker.cutRhs)
+            #  if cutType > 0:
+            #
+            #      self.add(constraint = worker.cutLhs,
+            #               sense     = "L",
+            #               rhs        = worker.cutRhs,
+            #               use        = 0)
+            #
+            #  print("Cut added to master : ", cpx.linear_constraints.get_num())
+            #  input("....")
+
+
+        #  nRowsMaster = cpx.linear_constraints.get_num()
+        #  nRows = cpxClone.linear_constraints.get_num()
+        #  print(" entering with ", nRowsMaster, " rows in master and ", nRows, "\
+        #  rows in clone ... ")
+        #  if nRowsMaster <= nRows:
+        #      cpxClone.linear_constraints.add(lin_expr=[worker.cutLhs],
+        #                                              senses  =["L"],
+        #                                              rhs     =[worker.cutRhs])
+        #      return
+        #
+        #  index = [i for i in range(nRows, nRowsMaster)]
+        #
+        #  #  print("ROWS ARE = ", cpx.linear_constraints.get_rows())
+        #  #  print("rhs are  = ", cpx.linear_constraints.get_rhs())
+        #  allConstr = cpx.linear_constraints.get_rows(index)
+        #  allRhs    = cpx.linear_constraints.get_rhs(index)
+        #  for i,j in enumerate(allRhs):
+        #      #  print(i,j, allConstr[i])
+        #
+        #      cpxClone.linear_constraints.add(lin_expr = [allConstr[i]],
+        #                                      senses   = ["L"],
+        #                                      rhs      = [j])
+        #
+        #  #  cpx.set_problem_type(cpx.problem_type.LP)
+        #  #  cpx.solve()
+        #  #  for j in range(inp.nI):
+        #  #      rc = cpx.solution.get_reduced_costs(y_ilo[j])
+        #  #      print("REAL RC = ", rc)
+        #
+        #  #  solve Master LP
+        #  cpxClone.solve()
+        #  #  print("LP sol Master is ", cpx.solution.get_objective_value())
+        #  zClone = cpxClone.solution.get_objective_value()
+        #  slack = cpxClone.solution.get_linear_slacks()
+        #  remove = [i for i in range(nRows) if slack[i] > _EPSI]
+        #  print(" ... due to SLACK, removing ", len(remove), " constraints.")
+        ub = self.get_objective_value()
+        #  zClone = cpxCloneLP.solution.get_objective_value()
+        #  print("CLONE z = ", zClone, " vs UB = ", ub)
+        #  print("ubBes is ", ubBest, " vs ub = ", ub)
+        #  from here
+        fixInClone = []
+        for j in range(inp.nI):
+            #  rc = cpxCloneLP.solution.get_reduced_costs(y_ilo[j])
+            for t in range(inp.nP):
+                #  if yFixed[j][t] == 0 and (zLP + rc[t]) > ub:
+                if yFixed[j][t] == 0 and (zLP + self.rc[j][t]) > ubBest:
+                    yFixed[j][t] = 1
+                    print(" [", self.nIter,"] ** ** ** ** fixing to zero ", y_ilo[j][t])
+                    fixInClone.append(y_ilo[j][t])
+                    self.add(constraint=cplex.SparsePair(ind=[y_ilo[j][t]],val=[1.0]),
+                             sense = "E",
+                             rhs   = 0.0)
+                    #  cpxClone.variables.set_upper_bounds(y_ilo[j][t], 0.0)
+
+        self.nIter += 1
+        self.yFixed = yFixed
 
 
 class BendersUserCutCallback(UserCutCallback):
@@ -300,16 +399,23 @@ class BendersUserCutCallback(UserCutCallback):
 
         """
         # Skip the separation if not at the end of the cut loop
-        #  if not self.is_after_cut_loop():
-            #  return
+        print("SOL USER CUT ", self.get_best_objective_value())
+        cpxClone = cplex.Cplex(self)
+        cpxClone.set_problem_type(cpxClone.problem_type.LP)
+        cpxClone.solve()
+        print("SOL ", cpxClone.solution.get_objective_value())
+
+        input("....")
+        return
+
+        if not self.is_after_cut_loop():
+            return
 
         # get data structure (self is the master)
         worker = self.worker
         y_ilo  = self.y_ilo
         z_ilo  = self.z_ilo
-        #  xc_ilo = self.xc_ilo
         inp    = self.inp
-
 
         #  get current master solution
         zHat = self.get_values(z_ilo)
@@ -317,22 +423,23 @@ class BendersUserCutCallback(UserCutCallback):
         for j in range(inp.nI):
             ySol.append([])
             ySol[j] = self.get_values(y_ilo[j])
-        #  xcSol = self.get_values(xc_ilo)
 
         flatten =  [item for sublist in ySol for item in sublist]
         #  benders cut separation
-        #  cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo, xcSol, xc_ilo)
         cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo)
         if cutType > 0:
-            #  a = [float(worker.cutLhs.val[i]) for i in range(inp.nI*inp.nP)]
-            #  lhsSum = sum([a[i]*flatten[i] for i in range(inp.nI*inp.nP)])
-            #  print("LhsSum = ", lhsSum , " vs ", worker.cutRhs)
-            #  input(" violated ? ")
+            a = [float(worker.cutLhs.val[i]) for i in range(inp.nI*inp.nP)]
+            lhsSum = sum([a[i]*flatten[i] for i in range(inp.nI*inp.nP)])
+            print("LhsSum = ", lhsSum , " vs ", worker.cutRhs)
+            violated = (lhsSum - worker.cutRhs) > 0.1
+            print("VIOLATED = ", violated)
             #  if (lhsSum > worker.cutRhs):
+            if violated:
                 # add Benders cut to the master
                 self.add(cut       = worker.cutLhs,
                          sense     = "L",
-                         rhs       = worker.cutRhs)
+                         rhs       = worker.cutRhs,
+                         use       = 0)
 
 
 
@@ -352,21 +459,26 @@ def parseCommandLine(argv):
     """
     global inputfile
     global userCuts
+    global cPercent
     try:
-        opts, args = getopt.getopt(argv, "hi:u:", ["help","ifile=","ucuts"])
+        opts, args = getopt.getopt(argv, "hi:u:c:",
+        ["help","ifile=","ucuts","cpercent"])
     except getopt.GetoptError:
         print("Command Line Error. Usage : python cflp.py -i <inputfile> -u\
-        <usercuts>")
+        <usercuts> -c <corridor width>")
         sys.exit(2)
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print("Usage : python cflp.py -i <inputfile> -u <usercuts>")
+            print("Usage : python cflp.py -i <inputfile> -u <usercuts> -c \
+            <corridor width>")
             sys.exit()
         elif opt in ("-i", "--ifile"):
             inputfile = arg
         elif opt in ("-u", "--ucuts"):
             userCuts = arg
+        elif opt in ("-c", "--cpercent"):
+            cPercent = float(arg)
 
 class Instance:
     """
@@ -385,8 +497,6 @@ class Instance:
        self.max_prod = []
        self.cap      = []
        self.dcum     = []
-       self.dj       = []
-
        with open(inputfile) as ff:
             data = ff.readline()
             self.nI, self.nP = [int(v) for v in data.split()]
@@ -428,18 +538,19 @@ class Instance:
                progr += 1
            self.dcum.append(list(reversed(aux)))
 
+       print(self.dcum)
+
        # max production of item j in period t is the minimum between
        # the limit set by capacity and the cumulative demand
        for j in range(self.nI):
            #  aa = [math.floor( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
-           #  aa = [( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
+           aa = [( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
            #  print("AA vs CAP ", aa, " ", self.dcum[j])
-           #  self.max_prod.append([min(aa[t],self.dcum[j][t]) for t in \
-           #  range(self.nP)])
-           self.max_prod.append([self.dcum[j][t] for t in \
+           self.max_prod.append([min(aa[t],self.dcum[j][t]) for t in \
            range(self.nP)])
+           #  self.max_prod.append([self.dcum[j][t] for t in \
+           #  range(self.nP)])
            #  self.max_prod.append(aa)
-           self.dj.append(sum([self.d[j][t] for t in range(self.nP)]))
 
 
 class MIP:
@@ -555,25 +666,168 @@ class MIP:
         self.s_ilo = s_ilo
         self.sI    = sI
 
+    def solveLPZero(self, inp):
+        cpx = self.cpx
+        y_ilo = self.y_ilo
 
-    def solve(self, inp):
+        cpx.set_problem_type(cpx.problem_type.LP)
+        self.solve(inp)
+        yLP = []
+        for j in range(inp.nI):
+            yLP.append(cpx.solution.get_values(y_ilo[j]))
+        print("From inside LP = ", cpx.solution.get_objective_value())
+        for j in range(inp.nI):
+            print("Item ", j, " :: ", yLP[j])
+
+        #  add "corridor" contraint
+        indexLP1 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
+        yLP[j][t] <= _EPSI]
+        print("INDEX is ", indexLP1)
+        value = [1.0]*len(indexLP1)
+        rhsVal = 0.25*len(indexLP1)
+        print("Change at least ", rhsVal, " values")
+        zero_constraint = cplex.SparsePair(ind=indexLP1,val=value)
+        cpx.linear_constraints.add(lin_expr  = [zero_constraint],
+                                   senses    = ["G"],
+                                   rhs       = [rhsVal],
+                                   names     = ["fixLP"])
+        self.solve(inp)
+        print("After inside LP = ", cpx.solution.get_objective_value())
+        yLP = []
+        for j in range(inp.nI):
+            yLP.append(cpx.solution.get_values(y_ilo[j]))
+        for j in range(inp.nI):
+            print("Item ", j, " :: ", yLP[j])
+
+        indexLP2 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
+        yLP[j][t] <= _EPSI]
+        print("INDEX is ", indexLP2)
+        fixToZero = list(set(indexLP1).intersection(indexLP2))
+        print("INTERSECTION = ", fixToZero)
+        cpx.set_problem_type(cpx.problem_type.MILP)
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
+        cpx.linear_constraints.delete("fixLP")
+        self.solve(inp)
+        yLP = []
+        for j in range(inp.nI):
+            yLP.append(cpx.solution.get_values(y_ilo[j]))
+        print("From inside MILP = ", cpx.solution.get_objective_value())
+        for j in range(inp.nI):
+            print("Item ", j, " :: ", yLP[j])
+        index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
+        yLP[j][t] <= _EPSI]
+        print("INDEX is ", index)
+
+        return fixToZero
+
+
+    def solveLPOne(self, inp):
+        cpx = self.cpx
+        y_ilo = self.y_ilo
+
+        cpx.set_problem_type(cpx.problem_type.LP)
+        self.solve(inp)
+        yLP = []
+        for j in range(inp.nI):
+            yLP.append(cpx.solution.get_values(y_ilo[j]))
+        print("From inside LP Ones = ", cpx.solution.get_objective_value())
+        for j in range(inp.nI):
+            print("Item ", j, " :: ", yLP[j])
+
+        #  add "corridor" contraint
+        indexLP1 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
+        yLP[j][t] >= (1.0 -_EPSI)]
+        print("INDEX of Ones is ", indexLP1)
+        value = [1.0]*len(indexLP1)
+        rhsVal = (1.0-0.25)*len(indexLP1)
+        print("Keep at most ", rhsVal, " values")
+        zero_constraint = cplex.SparsePair(ind=indexLP1,val=value)
+        cpx.linear_constraints.add(lin_expr  = [zero_constraint],
+                                   senses    = ["L"],
+                                   rhs       = [rhsVal],
+                                   names     = ["fixLP"])
+        self.solve(inp)
+        print("After inside LP = ", cpx.solution.get_objective_value())
+        yLP = []
+        for j in range(inp.nI):
+            yLP.append(cpx.solution.get_values(y_ilo[j]))
+        for j in range(inp.nI):
+            print("Item ", j, " :: ", yLP[j])
+
+        indexLP2 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
+        yLP[j][t] >= (1.0-_EPSI)]
+        print("INDEX is ", indexLP2)
+        fixToOne = list(set(indexLP1).intersection(indexLP2))
+        print("INTERSECTION = ", fixToOne)
+        cpx.set_problem_type(cpx.problem_type.MILP)
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
+        cpx.linear_constraints.delete("fixLP")
+        self.solve(inp)
+        yLP = []
+        for j in range(inp.nI):
+            yLP.append(cpx.solution.get_values(y_ilo[j]))
+        print("From inside MILP = ", cpx.solution.get_objective_value())
+        for j in range(inp.nI):
+            print("Item ", j, " :: ", yLP[j])
+        index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
+        yLP[j][t] >= (1.0-_EPSI)]
+        print("INDEX is ", index)
+        print("INTERSECTION = ", fixToOne)
+
+        input("...fixing to One ... ")
+        return fixToOne
+
+    def solve(self, inp, withPool=0):
         """
         Solve MIMPLS using cplex branch and bound.
         """
         global yRef
+        global ubBest
+        global yPool
+        global nPool
 
         y_ilo = self.y_ilo
         cpx = self.cpx
+        #  cpx.parameters.mip.interval.set(500) # how often to print info
+        #  cpx.parameters.timelimit.set(timeLimit)
+        cpx.parameters.mip.limits.solutions.set(5)
+        #  cpx.parameters.mip.display.set(display)
+        #  cpx.parameters.mip.tolerances.mipgap.set(0.000000001)
+        #  cpx.parameters.mip.tolerances.absmipgap.set(0.000000001)
 
-        cpx.set_problem_type(cpx.problem_type.LP)
+
+        #  cpx.set_problem_type(cpx.problem_type.LP)
         cpx.solve()
 
         print("STATUS = ", cpx.solution.status[cpx.solution.get_status()])
-        if cpx.solution.get_status() == cpx.solution.status.optimal_tolerance\
-            or cpx.solution.get_status() == cpx.solution.status.optimal:
-            print("OPT SOL found = ", cpx.solution.get_objective_value())
-            for j in range(inp.nI):
-                yRef.append(cpx.solution.get_values(y_ilo[j]))
+        #  if cpx.solution.get_status() == cpx.solution.status.optimal_tolerance\
+            #  or cpx.solution.get_status() == cpx.solution.status.optimal:
+        ubBest = cpx.solution.get_objective_value()
+
+        print("OPT SOL found = ", cpx.solution.get_objective_value())
+        for j in range(inp.nI):
+            yRef.append(cpx.solution.get_values(y_ilo[j]))
+        if withPool==1:
+            names = cpx.solution.pool.get_names()
+            nPool = len(names)
+            for n in names:
+                print("z(",n,") = ", cpx.solution.pool.get_objective_value(n))
+
+                yAux = []
+                for j in range(inp.nI):
+                    yAux.append(cpx.solution.pool.get_values(n, y_ilo[j]))
+                yPool.append(yAux)
+
+        #  for i in range(nPool):
+            #  for j in range(inp.nI):
+                #  print("Sol ", i, " y[",j," ] = ", yPool[i][j])
+
+
+        return ubBest
 
 
 
@@ -895,6 +1149,7 @@ class WorkerLP:
         cutVars = []
         cutVals = []
 
+        zSub = cpx.solution.get_objective_value()
         if cpx.solution.get_status() == cpx.solution.status.infeasible:
             cutType = 1
             #  add extreme ray
@@ -985,6 +1240,7 @@ class WorkerLP:
 
         self.cutLhs = cutLhs
         self.cutRhs = cutRhs
+        self.zSub   = zSub
 
         return cutType
 
@@ -1018,7 +1274,8 @@ class WorkerLPReformulation:
                     z_ilo[j][t].append(cpx.variables.get_num())
                     cpx.variables.add(obj   = [(r-t)*inp.h[j][t]],
                                       lb    = [0.0],
-                                      ub    = [cplex.infinity],
+                                      #  ub    = [cplex.infinity],
+                                      #  ub    = [inp.d[j][r]],
                                       names = [varName])
 
 
@@ -1080,6 +1337,11 @@ class WorkerLPReformulation:
                     cpx.variables.set_upper_bounds(z_ilo[j][t][r], 0.0)
 
 
+        #  for j in range(inp.nI):
+            #  for r in range(inp.nP):
+                #  for t in range(r):
+                    #  cpx.variables.set_upper_bounds(z_ilo[j][t][r], inp.d[j][r])
+
         # define labels for constraints
         lCapacity = ["capacity." + str(t) for t in range(inp.nP)]
         lDemand   = ["demand." + str(j) + "." + str(t) for j in range(inp.nI)
@@ -1095,6 +1357,168 @@ class WorkerLPReformulation:
         self.lDemand   = lDemand
         self.lLogic    = lLogic
         self.lcumLogic = lcumLogic
+
+    def formulateDual(self, cpx, inp, ySol, w_ilo, l_ilo, v_ilo, e_ilo):
+
+        for j in range(inp.nI):
+            w_ilo.append([])
+            for t in range(inp.nP):
+                w_ilo[j].append(cpx.variables.get_num())
+                varName = "w." + str(j) + "." + str(t)
+                cpx.variables.add(obj   = [inp.d[j][t]],
+                                  lb    = [-cplex.infinity],
+                                  ub    = [cplex.infinity],
+                                  names = [varName])
+
+        for t in range(inp.nP):
+            l_ilo.append(cpx.variables.get_num())
+            varName = "l." + str(t)
+            coeff = inp.cap[t]
+            for j in range(inp.nI):
+                coeff -= inp.m[j][t]*ySol[j][t]
+            cpx.variables.add(obj   = [coeff],
+                              lb    = [-cplex.infinity],
+                              ub    = [0.0],
+                              names = [varName])
+
+        for j in range(inp.nI):
+            v_ilo.append([])
+            for t in range(inp.nP):
+                v_ilo[j].append(cpx.variables.get_num())
+                varName = "v." + str(j) + "." + str(t)
+                cpx.variables.add(obj   = [inp.max_prod[j][t]*ySol[j][t]],
+                                  lb    = [-cplex.infinity],
+                                  ub    = [0.0],
+                                  names = [varName])
+
+        for j in range(inp.nI):
+            e_ilo.append([])
+            for t in range(inp.nP):
+                e_ilo[j].append([])
+                for r in range(inp.nP):
+                    e_ilo[j][t].append(cpx.variables.get_num())
+                    varName = "e." + str(j) + "." + str(t) + "." + str(r)
+                    cpx.variables.add(obj    = [inp.d[j][r]*ySol[j][t]],
+                                      lb     = [-cplex.infinity],
+                                      ub     = [0.0],
+                                      names  = [varName])
+
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                for r in range(t+1):
+                    cpx.variables.set_upper_bounds(e_ilo[j][t][r],0.0)
+                    cpx.variables.set_lower_bounds(e_ilo[j][t][r],0.0)
+
+        cpx.objective.set_sense(cpx.objective.sense.maximize)
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                for r in range(t, inp.nP):
+                    constrName = "dual." + str(j) + "." + str(t) + "." + str(r)
+                    index = [w_ilo[j][r], l_ilo[t], v_ilo[j][t], e_ilo[j][t][r]]
+                    value = [1.0, inp.a[j][t], 1.0, 1.0]
+                    dual_constraint = cplex.SparsePair(ind=index,val=value)
+                    cpx.linear_constraints.add(lin_expr = [dual_constraint],
+                                               senses   = ["L"],
+                                               rhs      = [(r-t)*inp.h[j][t]],
+                                               names    = [constrName])
+
+    def paretoOptimal(self, inp, ySol, zDual, zHat):
+        cpx = cplex.Cplex()
+
+        cpx.set_results_stream(None)
+        cpx.set_log_stream(None)
+        y0 = [ [0.5]*inp.nP for i in range(inp.nI)]
+        #  y0 = yRef
+        #  y0 = ySol
+        w_ilo = []
+        l_ilo = []
+        v_ilo = []
+        e_ilo = []
+        self.formulateDual(cpx, inp, y0, w_ilo, l_ilo, v_ilo, e_ilo)
+
+        index = [w_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP)]
+        value = [inp.d[j][t] for j in range(inp.nI) for t in range(inp.nP)]
+        index += [l_ilo[t] for t in range(inp.nP)]
+        coeffs = []
+        for t in range(inp.nP):
+            aux = inp.cap[t]
+            for j in range(inp.nI):
+                aux -= ySol[j][t]*inp.m[j][t]
+            coeffs.append(aux)
+        value += coeffs
+        for j in range(inp.nI):
+            for t in range(inp.nP):
+                for r in range(t, inp.nP):
+                    index += [e_ilo[j][t][r]]
+                    value += [ySol[j][t]*inp.d[j][r]]
+
+        index += [v_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP)]
+        value += [inp.max_prod[j][t]*ySol[j][t] for j in range(inp.nI) for t in range(inp.nP)]
+
+        obj_constraint = cplex.SparsePair(ind=index, val=value)
+        cpx.linear_constraints.add(lin_expr  = [obj_constraint],
+                                   senses    = ["E"],
+                                   rhs       = [zDual],
+                                   names     = ["obj_constraint"])
+
+
+        #  cpx.write("pareto.lp")
+        cpx.solve()
+
+        dDemand = [cpx.solution.get_values(w_ilo[j][t]) for j in range(inp.nI)
+        for t in range(inp.nP)]
+        dCapacity = [cpx.solution.get_values(l_ilo[t]) for t in range(inp.nP)]
+        dcumLogic = [cpx.solution.get_values(v_ilo[j][t]) for j in range(inp.nI)
+        for t in range(inp.nP)]
+        dLogic = [cpx.solution.get_values(e_ilo[j][t][r]) for j in
+        range(inp.nI) for t in range(inp.nP) for r in range(t,inp.nP)]
+        #  evaluation
+        #  tot = 0.0
+        #  progr = 0
+        #  for j in range(inp.nI):
+        #      for t in range(inp.nP):
+        #          tot += dDemand[progr]*inp.d[j][t]
+        #          progr += 1
+        #  for t in range(inp.nP):
+        #      aux = inp.cap[t]
+        #      for j in range(inp.nI):
+        #          aux -= ySol[j][t]*inp.m[j][t]
+        #      tot += dCapacity[t]*aux
+        #  progr = 0
+        #  for j in range(inp.nI):
+        #      for t in range(inp.nP):
+        #          for r in range(t, inp.nP):
+        #              tot += ySol[j][t]*inp.d[j][r]*dLogic[progr]
+        #              progr += 1
+        #  progr = 0
+        #  for j in range(inp.nI):
+        #      for t in range(inp.nP):
+        #          tot += dcumLogic[progr]*inp.max_prod[j][t]*ySol[j][t]
+        #          progr += 1
+
+        #  print("Obj pareto = ", tot)
+        return dDemand, dCapacity, dcumLogic, dLogic
+
+    def solveDual(self, inp, ySol, zHat):
+
+        cpx = cplex.Cplex()
+        cpx.set_results_stream(None)
+        cpx.set_log_stream(None)
+        w_ilo = []
+        l_ilo = []
+        v_ilo = []
+        e_ilo = []
+        self.formulateDual(cpx, inp, ySol, w_ilo, l_ilo, v_ilo, e_ilo)
+
+        cpx.solve()
+        zDual = cpx.solution.get_objective_value()
+
+        dDemand, dCapacity, dcumLogic, dLogic = self.paretoOptimal(inp, ySol,
+        zDual, zHat)
+
+        return dDemand, dCapacity, dcumLogic, dLogic
+
+
 
     def separate(self, inp, ySol, zHat, y_ilo, z_ilo_m):
         """
@@ -1119,6 +1543,8 @@ class WorkerLPReformulation:
         lLogic    = self.lLogic
         lcumLogic = self.lcumLogic
 
+        cpx.set_results_stream(None)
+        cpx.set_log_stream(None)
 
         #  update rhs values : logic constraints
         for j in range(inp.nI):
@@ -1143,6 +1569,9 @@ class WorkerLPReformulation:
 
 
         cpx.solve()
+        zSub = cpx.solution.get_objective_value()
+
+
         #  print("STATUS = ", cpx.solution.status[cpx.solution.get_status()])
         #  print("z_sub  = ", cpx.solution.get_objective_value())
         #  vars and values for the cut lhs
@@ -1192,10 +1621,18 @@ class WorkerLPReformulation:
         elif cpx.solution.get_status() == cpx.solution.status.optimal:
             cutType = 2
             zSub = cpx.solution.get_objective_value()
+            #  print("... ... zSUB = ", zSub)
             dCapacity = cpx.solution.get_dual_values(lCapacity)
             dDemand   = cpx.solution.get_dual_values(lDemand)
             dLogic    = cpx.solution.get_dual_values(lLogic)
             dcumLogic = cpx.solution.get_dual_values(lcumLogic)
+            #
+            #  print("demand = ", dDemand)
+            #  print("capacity = ", dCapacity)
+            #  print("cum     = ", dcumLogic)
+            #  print("logic   ", dLogic)
+            #  dDemand, dCapacity, dcumLogic, dLogic = self.solveDual(inp, ySol,
+            #  zHat)
 
             # method 2: the "standard" benders
             cutRhs = 0.0
@@ -1228,9 +1665,23 @@ class WorkerLPReformulation:
 
         self.cutLhs = cutLhs
         self.cutRhs = cutRhs
+        self.zSub   = zSub
 
         return cutType
 
+def findNext(j, t, inp):
+    #  print("Item ", j, " from period ", t)
+    tp = t
+    maxProd = inp.max_prod[j][t]
+    #  print("MAX = ", maxProd)
+    dCum = inp.d[j][t]
+    while dCum <= maxProd:
+        #  print("dCum vs maxProd ", dCum, " ", maxProd, " up to period ",tp)
+        tp += 1
+        if tp == inp.nP:
+            return tp
+        dCum += inp.d[j][tp]
+    return tp
 
 def createMaster(inp, cpx):
     """
@@ -1248,7 +1699,6 @@ def createMaster(inp, cpx):
 
     global z_ilo
     global y_ilo
-    #  global xc_ilo
     cpx.objective.set_sense(cpx.objective.sense.minimize)
 
     #  create variables y_jt
@@ -1270,6 +1720,34 @@ def createMaster(inp, cpx):
                       ub    = [cplex.infinity],
                       types = ["C"],
                       names = ["zHat"])
+
+    for j in range(inp.nI):
+        if inp.d[j][0] > 0.0:
+            cpx.variables.set_lower_bounds(y_ilo[j][0], 1)
+            #  for t in range(inp.nP-1):
+            for t in range(1):
+                #  hop constraint
+                tp = findNext(j,t, inp)
+                print("... For item ",j," we go from ",t," to ",tp)
+                #  input("...aka")
+                if tp < inp.nP:
+                    index = [y_ilo[j][t] for t in range(t+1,tp+1)]
+                    value = [1.0]*len(range(t,tp))
+                    hop_constraint = cplex.SparsePair(ind=index,val=value)
+                    cpx.linear_constraints.add(lin_expr = [hop_constraint],
+                                               senses   = ["G"],
+                                               rhs      = [1])
+
+    for j in range(inp.nI):
+        index = [y_ilo[j][t] for t in range(inp.nP)]
+        value = [inp.max_prod[j][t] for t in range(inp.nP)]
+        c_constraint = cplex.SparsePair(ind=index,val=value)
+        cpx.linear_constraints.add(lin_expr = [c_constraint],
+                                   senses   = ["G"],
+                                   rhs      = [inp.dcum[j][0]])
+
+
+
 
 
 def barrierInit(inp):
@@ -1298,27 +1776,24 @@ def barrierInit(inp):
     #  input(" ... barrier ... ")
     return ySol
 
-def inOutCycle(cpx, worker, y_ilo, z_ilo, inp):
+def inOutCycle(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
 
+    global inout
     _lambda = 0.1
     _alpha  = 0.9
-    progr   = 0
+    #  progr   = cpx.linear_constraints.get_num()
 
-    print(" -----> HERE yRef = ", yRef)
 
     cpx.set_problem_type(cpx.problem_type.LP)
     print("Problem type is ", cpx.problem_type[cpx.get_problem_type()])
 
     #  now solve simple problem to get interior point
     yt = barrierInit(inp)
-    #  yt = [ [0.9]*inp.nP]*inp.nI
-
-    stopping = 0
-    iter = 0
-
-    bestLP = 0.0
-    noImprovement = 0
+    iter           = 0
+    stopping       = 0
+    noImprovement  = 0
     activateKelley = 0
+    bestLP         = 0.0
     while not stopping:
         cpx.solve()
         zLP = cpx.solution.get_objective_value()
@@ -1330,16 +1805,17 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp):
         #  print("iter ", iter, " with z = ", zLP, " vs best ", bestLP)
         #  print("   .. current status : No Improv = ", noImprovement, \
                      #  " Kelley = ", activateKelley, " lambda = ", _lambda)
-        #  print(yLP)
-        if zLP > bestLP:
+        #  if zLP > bestLP:
+        if (zLP - bestLP) > 0.5:
             bestLP = zLP
             noImprovement = 0
         else:
             noImprovement += 1
 
-        if noImprovement == 5:
+        if noImprovement >= 5:
             if activateKelley == 0:
                 activateKelley = 1
+                noImprovement = 0
                 _lambda = 1.0
             else:
                 stopping = 1
@@ -1349,27 +1825,47 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp):
         range(inp.nP)] for j in range(inp.nI)]
         ySep = [ [_lambda*yLP[j][t] + (1-_lambda)*yt[j][t] for t in
         range(inp.nP)] for j in range(inp.nI)]
-        ySep = [[ ySep[j][t] + 2*_EPSI for t in
-        range(inp.nP)] for j in range(inp.nI)]
+        #  ySep = [[ ySep[j][t] + 2*_EPSI for t in
+        #  range(inp.nP)] for j in range(inp.nI)]
 
 
         cutType = worker.separate(inp, ySep, zHat, y_ilo, z_ilo)
+        iter += 1
+        if iter % 5 == 0:
+            check = [i for i in inout]
+            #  print("checking these constraints ", check)
+
+            slacks = cpx.solution.get_linear_slacks(check)
+            #  nrConstr = cpx.linear_constraints.get_num()
+            remove = [check[i] for i in range(len(slacks)) if slacks[i] > _EPSI]
+            #  print("removing ", remove)
+            cpx.linear_constraints.delete(remove)
+            for i in remove:
+                inout.remove(i)
+            #  print("Removed ", remove)
+            #  print("This is inout = ", inout)
+
         if cutType > 0:
-            constrName = "inout." + str(progr)
-            progr += 1
+            nrConstr = cpx.linear_constraints.get_num()
+            constrName = "inout." + str(globalProgr)
+            #  print("adding ", constrName)
+            inout.append(constrName)
+            globalProgr += 1
             cpx.linear_constraints.add(lin_expr = [worker.cutLhs],
                                        senses   = "L",
                                        rhs      = [worker.cutRhs],
                                        names    = [constrName])
-        iter += 1
 
     cpx.solve()
 
-    slacks = cpx.solution.get_linear_slacks()
-    nrConstr = cpx.linear_constraints.get_num()
+    check = [i for i in inout]
+    slacks = cpx.solution.get_linear_slacks(check)
     #  print("[", nrConstr,"] SLACKS  == ", slacks)
-    remove = ["inout." + str(i) for i in range(nrConstr) if slacks[i] > _EPSI]
+    remove = [check[i] for i in range(len(slacks)) if slacks[i] > _EPSI]
+    #  print("removing ", remove)
     cpx.linear_constraints.delete(remove)
+    for i in remove:
+        inout.remove(i)
 
     cpx.solve()
     #  print("OBJ AFTER REMOVING SLACKS = ", cpx.solution.get_objective_value())
@@ -1389,6 +1885,288 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp):
     #              cpx.variables.set_lower_bounds(y_ilo[j][t], 1.0)
     #              nrFixed += 1
     #  print("Tot fixed to 1 is ", nrFixed)
+    return globalProgr
+
+def inOutCycle2(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
+
+    global inout
+    _lambda = 0.1
+    _alpha  = 0.9
+    #  progr   = cpx.linear_constraints.get_num()
+
+    cpx.set_problem_type(cpx.problem_type.LP)
+    #  print("Problem type is ", cpx.problem_type[cpx.get_problem_type()])
+
+    #  now solve simple problem to get interior point
+    yIn = [[0.9]*inp.nP for i in range(inp.nI)]
+    #  print("yIn = ", yIn)
+    iter           = 0
+    stopping       = 0
+    noImprovement  = 0
+    activateKelley = 0
+    bestLP         = 0.0
+    while not stopping:
+        cpx.solve()
+        zLP = cpx.solution.get_objective_value()
+        print("zLP(",iter,") = ", zLP)
+        yOut = []
+        for j in range(inp.nI):
+            yOut.append(cpx.solution.get_values(y_ilo[j]))
+        #  print("yOut (LP) = ", yOut)
+        zHat = cpx.solution.get_values(z_ilo)
+
+        #  print("iter ", iter, " with z = ", zLP, " vs best ", bestLP)
+        #  print("   .. current status : No Improv = ", noImprovement, \
+                     #  " Kelley = ", activateKelley, " lambda = ", _lambda)
+        #  if zLP > bestLP:
+        if (zLP - bestLP) > 0.01:
+            bestLP = zLP
+            noImprovement = 0
+        else:
+            noImprovement += 1
+
+        if noImprovement >= 5:
+            if activateKelley == 0:
+                activateKelley = 1
+                noImprovement = 0
+                _lambda = 1.0
+            else:
+                stopping = 1
+            continue
+
+        ySep = [ [_lambda*yOut[j][t] + (1-_lambda)*yIn[j][t] for t in
+        range(inp.nP)] for j in range(inp.nI)]
+        ySep = [[ ySep[j][t] + 2*_EPSI for t in
+        range(inp.nP)] for j in range(inp.nI)]
+
+
+        cutType = worker.separate(inp, ySep, zHat, y_ilo, z_ilo)
+        flatten =  [item for sublist in ySep for item in sublist]
+        a = [float(worker.cutLhs.val[i]) for i in range(inp.nI*inp.nP)]
+        lhsSum = sum([a[i]*flatten[i] for i in range(inp.nI*inp.nP)])
+        #  print("LhsSum = ", lhsSum , " vs ", worker.cutRhs)
+        #  print(lhsSum <= worker.cutRhs)
+        violated = (lhsSum - worker.cutRhs) > 0.1
+        #  print(" violated ? ", violated)
+
+        iter += 1
+        if iter % 5 == 0:
+            check = [i for i in inout]
+            #  print("checking these constraints ", check)
+
+            slacks = cpx.solution.get_linear_slacks(check)
+            #  nrConstr = cpx.linear_constraints.get_num()
+            remove = [check[i] for i in range(len(slacks)) if slacks[i] > _EPSI]
+            #  print("removing ", remove)
+            cpx.linear_constraints.delete(remove)
+            for i in remove:
+                inout.remove(i)
+            #  print("Removed ", remove)
+            #  print("This is inout = ", inout)
+
+        if violated:
+            #  progr = cpx.linear_constraints.get_num()
+            constrName = "inout." + str(globalProgr)
+            #  print("adding ", constrName)
+            inout.append(constrName)
+            globalProgr += 1
+            cpx.linear_constraints.add(lin_expr = [worker.cutLhs],
+                                       senses   = "L",
+                                       rhs      = [worker.cutRhs],
+                                       names    = [constrName])
+        else:
+            yIn = ySep
+            print("... not violated ... moving 'in' point")
+
+    cpx.solve()
+
+    check = [i for i in inout]
+    slacks = cpx.solution.get_linear_slacks(check)
+    #  print("[", nrConstr,"] SLACKS  == ", slacks)
+    remove = [check[i] for i in range(len(slacks)) if slacks[i] > _EPSI]
+    cpx.linear_constraints.delete(remove)
+    for i in remove:
+        inout.remove(i)
+
+    cpx.solve()
+    #  print("OBJ AFTER REMOVING SLACKS = ", cpx.solution.get_objective_value())
+    nrConstr = cpx.linear_constraints.get_num()
+    print(" ... now constr is ", nrConstr)
+    return globalProgr
+
+def fixingToZero(inp, cpx, bestLB, bestUB, y_ilo, yFixed):
+    cpxClone = cplex.Cplex(cpx)
+    cpxClone.set_problem_type(cpxClone.problem_type.LP)
+    cpxClone.solve()
+    for j in range(inp.nI):
+        rc = cpxClone.solution.get_reduced_costs(y_ilo[j])
+        for t in range(inp.nP):
+            if cpxClone.solution.get_values(y_ilo[j][t]) <= _EPSI and \
+                yFixed[j][t] == 0 and (bestLB + rc[t]) > bestUB:
+                yFixed[j][t] = 1
+
+                print(" +** ** ** ** fixing to zero ", y_ilo[j][t])
+                cpx.variables.set_upper_bounds(y_ilo[j][t], 0.0)
+
+def addCorridor(inp, cpx, ySol, y_ilo, cWidth):
+    index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP)]
+    value = [1-2*ySol[j][t] for j in range(inp.nI) for t in range(inp.nP)]
+    rhsVal = cWidth - sum([ySol[j][t] for j in range(inp.nI) for t in
+    range(inp.nP)])
+    corridor_constr = cplex.SparsePair(ind=index,val=value)
+    cpx.linear_constraints.add(lin_expr = [corridor_constr],
+                               senses   = "L",
+                               rhs      = [rhsVal],
+                               names    = ["corridor"])
+    print("... [",cWidth,"] After adding corridor constr : ", cpx.linear_constraints.get_num())
+
+def setCpxParameters(cpx):
+    cpx.parameters.preprocessing.presolve.set(cpx.parameters.preprocessing.presolve.values.off)
+    cpx.parameters.threads.set(1)
+    cpx.parameters.mip.strategy.search.set(cpx.parameters.mip.strategy.search.values.traditional)
+
+def getSolution(inp, cpx, y_ilo, z_ilo):
+    ySol = []
+    zHat = cpx.solution.get_values(z_ilo)
+    for j in range(inp.nI):
+        ySol.append(cpx.solution.get_values(y_ilo[j]))
+    return zHat, ySol
+
+def getUB(inp, zSub, ySol):
+    z = zSub
+    for j in range(inp.nI):
+        for t in range(inp.nP):
+            z += inp.f[j][t] * ySol[j][t]
+    return z
+
+
+def benderAlgorithm(inp, fixToZero, fixToOne):
+
+    global cPercent
+    globalProgr = 0
+    cWidth = max(cPercent*inp.nI*inp.nP, 1)
+    cpx = cplex.Cplex()
+    #  cpx.set_results_stream(None)
+    #  cpx.set_log_stream(None)
+    createMaster(inp, cpx)
+    worker = WorkerLPReformulation(inp)
+    #  worker = WorkerLP(inp)
+    setCpxParameters(cpx)
+
+    globalProgr = inOutCycle2(cpx, worker, y_ilo, z_ilo, inp, globalProgr)
+    #  cpx.write("inout-12-15.lp")
+    #  exit(123)
+    #  cpx.read("inout-12-15.lp")
+    #  cpx.read("inout-6-15.lp")
+    cpx.set_problem_type(cpx.problem_type.MILP)
+    for j in range(inp.nI):
+        for t in range(inp.nP):
+            cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
+
+    #  add some fixing scheme here
+    print("FIX TO ZERO HERE = ", fixToZero)
+    rhsVal = 0.05*len(fixToZero)
+    zero_cut = cplex.SparsePair(ind=fixToZero, val=[1.0]*len(fixToZero))
+    cpx.linear_constraints.add(lin_expr = [zero_cut],
+                               senses   = ["L"],
+                               rhs      = [rhsVal])
+#
+    print("FIX TO ONE HERE = ", fixToOne)
+    #  for j in fixToZero:
+        #  print("Fixing to zero var ", j)
+        #  cpx.variables.set_upper_bounds(j,0.0)
+    #  add it as a cut
+    rhsVal = (1-0.1)*len(fixToOne)
+    one_cut = cplex.SparsePair(ind=fixToOne, val=[1.0]*len(fixToOne))
+    cpx.linear_constraints.add(lin_expr = [one_cut],
+                               senses   = ["G"],
+                               rhs      = [rhsVal])
+
+    print("Before adding cut to master : ", cpx.linear_constraints.get_num())
+    for i in range(nPool):
+    #  for i in range(0):
+        cutType = worker.separate(inp, yPool[i], 0.0, y_ilo, z_ilo)
+        if cutType > 0:
+            constrName = "heur." + str(i)
+            cpx.linear_constraints.add(lin_expr = [worker.cutLhs],
+                                       senses   = "L",
+                                       rhs      = [worker.cutRhs],
+                                       names    = [constrName])
+
+    print("After adding Pool cut to master : ", cpx.linear_constraints.get_num())
+
+    #  #  add corridor constraint
+    addCorridor(inp, cpx, yPool[0], y_ilo, cWidth)
+
+    #  initialize data structure
+    yFixed = [ [0 for i in range(inp.nP)] for t in range(inp.nI)]
+    ySol = []
+    for j in range(inp.nI):
+        ySol.append([])
+    zHat = -1
+
+    nIter        = 0
+    stopping     = 0
+    nrCuts       = 0
+    bestLB       = 0.1
+    maxTolerance = 0.01
+    bestUB       = cplex.infinity
+    gap          = cplex.infinity
+    while not stopping:
+        if nIter % 5 == 0:
+            globalProgr = inOutCycle(cpx, worker, y_ilo, z_ilo, inp, globalProgr)
+            cpx.set_problem_type(cpx.problem_type.MILP)
+            for j in range(inp.nI):
+                for t in range(inp.nP):
+                    cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
+
+        cpx.solve()
+        bestLB = cpx.solution.get_objective_value()
+        #  if (nIter % 5 ) == 0 and gap < 0.1:
+            #  fixingToZero(inp, cpx, bestLB, bestUB, y_ilo, yFixed)
+
+        if (bestUB - bestLB) <= maxTolerance:
+            stopping = 1
+            continue
+
+        #  get master solution
+        #  zHat, ySol = getSolution(inp, cpx, y_ilo, z_ilo, ySol, zHat)
+        zHat, ySol = getSolution(inp, cpx, y_ilo, z_ilo)
+
+        cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo)
+        if cutType > 0:
+            cutName = "cut." + str(nrCuts)
+            nrCuts += 1
+            cpx.linear_constraints.add(lin_expr = [worker.cutLhs],
+                                       senses   = ["L"],
+                                       rhs      = [worker.cutRhs],
+                                       names    = [cutName])
+        if cutType == 2: # optimality cut
+            ub = getUB(inp, worker.zSub, ySol)
+            if ub < bestUB or ((nIter % 5 ) == 0 and gap < 0.1):
+                if ub < bestUB:
+                    bestUB = ub
+                    #  add corridor constraint
+                    addCorridor(inp, cpx, yPool[0], y_ilo, cWidth)
+                    print("... corridor added ...")
+                    input(" ... c ... ")
+
+                fixingToZero(inp, cpx, bestLB, bestUB, y_ilo, yFixed)
+
+            if (bestUB - bestLB) <= maxTolerance:
+                stopping = 1
+                continue
+
+        nIter +=1
+        if bestLB > 0.0:
+            gap = (bestUB-bestLB)/bestLB
+        print("Iter {0:5d} :: GAP = {1:8.3f} ... LB = {2:8.3f} vs UB =\
+        {3:8.3f}. ### Added {4:5d} cuts.".format(nIter, gap, bestLB, bestUB, \
+        nrCuts))
+
+    print("Final Result ====== ")
+    print(" ** LB = ", bestLB)
+    print(" ** UB = ", bestUB)
 
 
 
@@ -1408,17 +2186,27 @@ def main(argv):
     parseCommandLine(argv)
     inp = Instance(inputfile)
 
-    cpx = cplex.Cplex()
 
     # activate this part if we want to solve the original MIP via cplex
     #  mip = MIP(inp)
     #  mip.solve(inp)
     #  input(" ... now reformulation ... ")
-    #  mip = MIPReformulation(inp)
-    #  mip.solve(inp)
+    mip = MIPReformulation(inp)
+    #  solve LP of full problem
+    fixToZero = mip.solveLPZero(inp)
+    fixToOne = mip.solveLPOne(inp)
+    zHeur = mip.solve(inp,withPool=1)
+    print("zHeur = ", zHeur)
 
+    benderAlgorithm(inp, fixToZero, fixToOne)
+    exit(145)
+
+    cpx = cplex.Cplex()
+    cpxClone = cplex.Cplex()
     # create master and worker (subproblem)
     createMaster(inp, cpx)
+    createMaster(inp, cpxClone)
+    cpxClone.set_problem_type(cpx.problem_type.LP)
     #  worker = WorkerLP(inp)
     worker = WorkerLPReformulation(inp)
 
@@ -1432,15 +2220,28 @@ def main(argv):
     cpx.parameters.mip.strategy.search.set(
         cpx.parameters.mip.strategy.search.values.traditional)
 
-    inOutCycle(cpx, worker, y_ilo, z_ilo, inp)
+    #  inOutCycle(cpx, worker, y_ilo, z_ilo, inp)
+    #  cpx.write("inout-6-15.lp")
+
+    cpx.read("inout-6-15.lp")
     cpx.set_problem_type(cpx.problem_type.MILP)
-    #  print("Type here = ", cpx.problem_type[cpx.get_problem_type()])
+    print("Type here = ", cpx.problem_type[cpx.get_problem_type()])
 
     #  binary variables must be re-specified
     for j in range(inp.nI):
         for t in range(inp.nP):
             cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
 
+    print("Before adding cut to master : ", cpx.linear_constraints.get_num())
+    cutType = worker.separate(inp, yRef, 0.0, y_ilo, z_ilo)
+    if cutType > 0:
+        constrName = "heur." + str(0)
+        cpx.linear_constraints.add(lin_expr = [worker.cutLhs],
+                                   senses   = "L",
+                                   rhs      = [worker.cutRhs],
+                                   inames    = [constrName])
+    print("Cut added to master : ", cpx.linear_constraints.get_num())
+    #  solveCall = cpx.register_callback(SolveNodeCallback)
 
     # register LAZY callback
     lazyBenders        = cpx.register_callback(BendersLazyConsCallback)
@@ -1448,7 +2249,11 @@ def main(argv):
     lazyBenders.inp    = inp
     lazyBenders.z_ilo  = z_ilo
     lazyBenders.y_ilo  = y_ilo
+    lazyBenders.yFixed = [ [0 for i in range(inp.nP)] for t in range(inp.nI)]
     lazyBenders.worker = worker
+    lazyBenders.solved = 0
+    lazyBenders.rc     = []
+    lazyBenders.nIter  = 0
     if userCuts == "1":
         # register USER callback
         userBenders        = cpx.register_callback(BendersUserCutCallback)
