@@ -37,6 +37,8 @@ Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)
 Introduction
 ------------
 
+**NOTE**: A completely modified version of this code is presented below.
+
 This code implements a simple benders decomposition scheme for the
 multi-item multi-period capacitated lot sizing problem. Benders cuts are added
 via LazyConstraintCallback(). The case of an infeasibility cut is not
@@ -199,6 +201,55 @@ History
 
     Added user cuts, to get cuts for fractional values of y* as well.
 
+Redefinition based on SPL
+-------------------------
+
+A modified version of this code is presented here. Basically, two important
+changes have been introduced:
+
+1. We use the Simple Plant Location (SPL) reformulation for the Lot Sizing
+problem 
+2. Rather than relying on LazyConstraintCallback(), we now implement a cycle
+to define Benders' scheme, with iterative calls to master and subproblems.
+
+The following is the SPL reformulation:
+
+.. math ::
+    :nowrap:
+
+    \\begin{eqnarray}
+      & \min z = &   \sum_{j=1}^n \sum_{t=1}^T f_{jt}y_{jt} +
+      \sum_{j=1}^n \sum_{r=1}^T \sum_{t=1}^{r-1} h_{jtr}z_{jtr}
+      \label{eq:SPL-obj}\\\\
+      &\mbox{s.t} & \sum_{j=1}^n \left(a_{jt}\sum_{r=t}^T z_{jtr} +
+      m_{jt}y_{jt}\\right) \leq b_t,
+      \quad t = 1, \ldots, T \label{eq:SPL-capacity-constr} \\\\
+      &&  \sum_{t=1}^r z_{jtr} = d_{jr},
+      \quad j = 1, \ldots, n , \quad r = 1, \dots, T \label{eq:SPL-demand-constr}
+      \\\\
+      && z_{jtr} \leq d_{jr}y_{jt},
+      \quad j = 1, \ldots, n , \quad t = 1, \dots, T, \quad r=t,\dots,T
+      \label{eq:SPL-logic-constr} \\\\
+      && \sum_{r=t}^T z_{jtr} \leq M y_{jt},
+      \quad j = 1, \ldots, n , \quad t = 1, \dots, T \\\\
+      && y_{jt} \in \left\{0,1\\right\}, \quad j = 1, \ldots, n, \quad
+      t=1, \ldots, T \label{eq:SPL-y-binary}\\\\
+      && z_{jtr} \geq 0, \quad j = 1, \ldots, n, \quad
+      t=1, \ldots, T, \quad r = t,\dots,T \label{eq:SPL-z-cont}
+    \end{eqnarray}
+
+where we define :math:`h_{jtr} = \sum_{t'=t}^{r-1} h_{jt'}` as the
+cumulative cost of keeping in inventory a unit of item *j* from period *t* to
+period *r-1*. 
+
+The separation scheme and, consequently, the construction of master and
+subproblems is as before. However, the main change here concerns the use of a
+cycle to iteratively solve the master and the subproblems. 
+
+We call :func:`benderAlgorithm()`, which is a function that implements the cycle.
+Before doing that, we might apply some fixing schemes (both to zero and to one)
+based on the LP relaxation. See functions :meth:`MIP.solveLPOne()` and
+:meth:`MIP.solveLPZero()`.
 
 """
 
@@ -214,13 +265,17 @@ from cplex.callbacks import SolveCallback, SimplexCallback
 
 from cplex.exceptions import CplexError
 
+from lagrange import *
+from dw2 import *
+#  from dw import *
 
-_INFTY = sys.float_info.max
-_EPSI  = sys.float_info.epsilon
 
+_INFTY    = sys.float_info.max
+_EPSI     = sys.float_info.epsilon
 inputfile = ""
 userCuts  = "0"
 cPercent  = 0.0
+algo      = -1
 
 #  we set the master variables as global, while the subproblem vars are local
 z_ilo     = -1
@@ -229,11 +284,11 @@ lCapacity = []
 lLogic    = []
 lDemand   = []
 
-inout = []
-yRef = []
-yPool = []
-nPool = 0
-ubBest = 0.0
+inout     = []
+yRef      = []
+yPool     = []
+nPool     = 0
+ubBest    = 0.0
 startTime = -1;
 
 class SolveNodeCallback(SimplexCallback):
@@ -456,22 +511,43 @@ def parseCommandLine(argv):
 
     -u userCuts    activate user cuts (fractional values)
 
+    -c cpercent     corridor width
+
+    -z zeros        soft fixing to zero
+    
+    -o ones        soft fixing to one
+
+    -a algorithm   type of algorithm used:
+
+    With respect to the type of algorithms that can be used, we have:
+
+        1.  Benders Decomposition
+        2.  Lagrangean Relaxation
+        3.  Dantzig-Wolfe
+        4.  Cplex MIP solver
+
     """
     global inputfile
     global userCuts
     global cPercent
+    global cZero
+    global cOne
+    global algo
+
     try:
-        opts, args = getopt.getopt(argv, "hi:u:c:",
-        ["help","ifile=","ucuts","cpercent"])
+        opts, args = getopt.getopt(argv, "hi:u:c:z:o:a:",
+        ["help","ifile=","ucuts","cpercent","zeros","ones","algorithm"])
     except getopt.GetoptError:
         print("Command Line Error. Usage : python cflp.py -i <inputfile> -u\
-        <usercuts> -c <corridor width>")
+        <usercuts> -c <corridor width> -z <fix to zero> -o <fix to one> \
+        -a <algorithm BD, LR, DW, Cplex>")
         sys.exit(2)
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
             print("Usage : python cflp.py -i <inputfile> -u <usercuts> -c \
-            <corridor width>")
+            <corridor width> -z <fix to zero> -o <fix to one> \
+            -a <algorithm - BD, LR, DW, Cplex>")
             sys.exit()
         elif opt in ("-i", "--ifile"):
             inputfile = arg
@@ -479,6 +555,12 @@ def parseCommandLine(argv):
             userCuts = arg
         elif opt in ("-c", "--cpercent"):
             cPercent = float(arg)
+        elif opt in ("-z", "--zeros"):
+            cZero = float(arg)
+        elif opt in ("-o", "--ones"):
+            cOne  = float(arg)
+        elif opt in ("-a", "--algorithm"):
+            algo  = float(arg)
 
 class Instance:
     """
@@ -538,26 +620,28 @@ class Instance:
                progr += 1
            self.dcum.append(list(reversed(aux)))
 
-       print(self.dcum)
 
        # max production of item j in period t is the minimum between
        # the limit set by capacity and the cumulative demand
        for j in range(self.nI):
-           #  aa = [math.floor( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
            aa = [( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
-           #  print("AA vs CAP ", aa, " ", self.dcum[j])
            self.max_prod.append([min(aa[t],self.dcum[j][t]) for t in \
            range(self.nP)])
-           #  self.max_prod.append([self.dcum[j][t] for t in \
-           #  range(self.nP)])
-           #  self.max_prod.append(aa)
 
 
 class MIP:
     """
+    .. class:MIP()
+
     Define the full model and solve it using cplex. We use this class to
     compute optimal values of the full MIP models and compare them, along with
     the achieve performance, with the Benders approach.
+
+    This is the Standard Lot Sizing implementation, using variables
+    :math:`y_{jt}, x_{jt}, s_{jt}`. This formulation is no longer used in the
+    current version of the code, since the SPL reformulation provides tighter
+    relaxations.
+
     """
     def __init__(self, inp):
         y_ilo = []
@@ -667,123 +751,128 @@ class MIP:
         self.sI    = sI
 
     def solveLPZero(self, inp):
+        """
+        .. method:solveLPZero()
+
+        Solve LP relaxation of original MIP twice:
+        
+        - the first time, we solve the LP relaxation of the whole problem, and
+          we store the variables whose value is zero in the LP solution
+          (indexLP1)
+        - the second time, we add a "corridor" type of constraint to the LP,
+          enforcing that at least a given number of variables in indexLP1 will
+          change value, i.e., will take a value above 0. We store in indexLP2
+          the variables that take value zero in the LP-constrained model.
+        - the intersection between indexLP1 and indexLP2 gives the set of
+          variables we want to keep fixed to zero.
+        """
         cpx = self.cpx
         y_ilo = self.y_ilo
 
+        #  transform MIP into LP and solve it
         cpx.set_problem_type(cpx.problem_type.LP)
         self.solve(inp)
         yLP = []
         for j in range(inp.nI):
             yLP.append(cpx.solution.get_values(y_ilo[j]))
-        print("From inside LP = ", cpx.solution.get_objective_value())
-        for j in range(inp.nI):
-            print("Item ", j, " :: ", yLP[j])
 
-        #  add "corridor" contraint
+        #  add "corridor" constraint (and solve LP again)
         indexLP1 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
         yLP[j][t] <= _EPSI]
-        print("INDEX is ", indexLP1)
         value = [1.0]*len(indexLP1)
-        rhsVal = 0.25*len(indexLP1)
-        print("Change at least ", rhsVal, " values")
+        rhsVal = 0.25*len(indexLP1) #  change at least rhsVal variables
         zero_constraint = cplex.SparsePair(ind=indexLP1,val=value)
         cpx.linear_constraints.add(lin_expr  = [zero_constraint],
                                    senses    = ["G"],
                                    rhs       = [rhsVal],
                                    names     = ["fixLP"])
-        self.solve(inp)
-        print("After inside LP = ", cpx.solution.get_objective_value())
+
+        self.solve(inp) #  solve LP-constrained version
         yLP = []
         for j in range(inp.nI):
             yLP.append(cpx.solution.get_values(y_ilo[j]))
-        for j in range(inp.nI):
-            print("Item ", j, " :: ", yLP[j])
-
         indexLP2 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
         yLP[j][t] <= _EPSI]
-        print("INDEX is ", indexLP2)
+        #  fix to zero vars that are at zero in both LPs
         fixToZero = list(set(indexLP1).intersection(indexLP2))
-        print("INTERSECTION = ", fixToZero)
+        #  print("INTERSECTION = ", fixToZero)
+
+        #  restore MIP
         cpx.set_problem_type(cpx.problem_type.MILP)
         for j in range(inp.nI):
             for t in range(inp.nP):
                 cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
+
+        #  remove the corridor constraint from the main model
         cpx.linear_constraints.delete("fixLP")
-        self.solve(inp)
-        yLP = []
-        for j in range(inp.nI):
-            yLP.append(cpx.solution.get_values(y_ilo[j]))
-        print("From inside MILP = ", cpx.solution.get_objective_value())
-        for j in range(inp.nI):
-            print("Item ", j, " :: ", yLP[j])
-        index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
-        yLP[j][t] <= _EPSI]
-        print("INDEX is ", index)
 
         return fixToZero
 
 
     def solveLPOne(self, inp):
+        """
+        .. method:solveLPOne()
+
+        Same idea presented in :func:`solveLPZero()`. See comment above.
+        """
         cpx = self.cpx
         y_ilo = self.y_ilo
 
+        #  transform into LP and solve it
         cpx.set_problem_type(cpx.problem_type.LP)
         self.solve(inp)
         yLP = []
         for j in range(inp.nI):
             yLP.append(cpx.solution.get_values(y_ilo[j]))
-        print("From inside LP Ones = ", cpx.solution.get_objective_value())
-        for j in range(inp.nI):
-            print("Item ", j, " :: ", yLP[j])
 
         #  add "corridor" contraint
         indexLP1 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
         yLP[j][t] >= (1.0 -_EPSI)]
-        print("INDEX of Ones is ", indexLP1)
         value = [1.0]*len(indexLP1)
         rhsVal = (1.0-0.25)*len(indexLP1)
-        print("Keep at most ", rhsVal, " values")
         zero_constraint = cplex.SparsePair(ind=indexLP1,val=value)
         cpx.linear_constraints.add(lin_expr  = [zero_constraint],
                                    senses    = ["L"],
                                    rhs       = [rhsVal],
                                    names     = ["fixLP"])
+
+        #  solve constrained version of LP
         self.solve(inp)
-        print("After inside LP = ", cpx.solution.get_objective_value())
         yLP = []
         for j in range(inp.nI):
             yLP.append(cpx.solution.get_values(y_ilo[j]))
-        for j in range(inp.nI):
-            print("Item ", j, " :: ", yLP[j])
 
         indexLP2 = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
         yLP[j][t] >= (1.0-_EPSI)]
-        print("INDEX is ", indexLP2)
+
+        #  get interception between indexLP1 and indexLP2
         fixToOne = list(set(indexLP1).intersection(indexLP2))
-        print("INTERSECTION = ", fixToOne)
+        #  print("INTERSECTION = ", fixToOne)
+
+        #  restore original MIP
         cpx.set_problem_type(cpx.problem_type.MILP)
         for j in range(inp.nI):
             for t in range(inp.nP):
                 cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
-        cpx.linear_constraints.delete("fixLP")
-        self.solve(inp)
-        yLP = []
-        for j in range(inp.nI):
-            yLP.append(cpx.solution.get_values(y_ilo[j]))
-        print("From inside MILP = ", cpx.solution.get_objective_value())
-        for j in range(inp.nI):
-            print("Item ", j, " :: ", yLP[j])
-        index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP) if
-        yLP[j][t] >= (1.0-_EPSI)]
-        print("INDEX is ", index)
-        print("INTERSECTION = ", fixToOne)
 
-        input("...fixing to One ... ")
+        #  eliminate corridor constraint
+        cpx.linear_constraints.delete("fixLP")
+
         return fixToOne
 
-    def solve(self, inp, withPool=0):
+    def solve(self, inp, nSol=99999, withPool=0, withPrinting=0, display=0,
+            timeLimit = 10000):
         """
-        Solve MIMPLS using cplex branch and bound.
+        .. method:solve()
+
+        Solve the original MIMPLS using cplex branch and bound. A number of
+        flags can be activate, to control the behavior of the solver:
+
+        * nSol : maximum number of solutions to be visited
+        * withPool : collect a pool of solutions during the optimization phase
+        * withPrinting: control the output
+        * display : control cplex output
+        * timeLimit : set a maximum time limit
         """
         global yRef
         global ubBest
@@ -791,26 +880,37 @@ class MIP:
         global nPool
 
         y_ilo = self.y_ilo
-        cpx = self.cpx
+        z_ilo = self.z_ilo
+        cpx   = self.cpx
+
+        #  cpx.set_results_stream(None)
+        #  cpx.set_log_stream(None)
+        cpx.parameters.timelimit.set(timeLimit)
+        cpx.parameters.mip.limits.solutions.set(nSol)
+        cpx.parameters.mip.display.set(display)
         #  cpx.parameters.mip.interval.set(500) # how often to print info
-        #  cpx.parameters.timelimit.set(timeLimit)
-        cpx.parameters.mip.limits.solutions.set(5)
-        #  cpx.parameters.mip.display.set(display)
         #  cpx.parameters.mip.tolerances.mipgap.set(0.000000001)
         #  cpx.parameters.mip.tolerances.absmipgap.set(0.000000001)
 
 
-        #  cpx.set_problem_type(cpx.problem_type.LP)
         cpx.solve()
 
-        print("STATUS = ", cpx.solution.status[cpx.solution.get_status()])
+        if withPrinting == 1:
+            print("STATUS = ", cpx.solution.status[cpx.solution.get_status()])
+            print("OPT SOL found = ", cpx.solution.get_objective_value())
         #  if cpx.solution.get_status() == cpx.solution.status.optimal_tolerance\
             #  or cpx.solution.get_status() == cpx.solution.status.optimal:
         ubBest = cpx.solution.get_objective_value()
 
-        print("OPT SOL found = ", cpx.solution.get_objective_value())
-        for j in range(inp.nI):
-            yRef.append(cpx.solution.get_values(y_ilo[j]))
+        if withPrinting == 2:
+            for j in range(inp.nI):
+                yRef.append(cpx.solution.get_values(y_ilo[j]))
+                print("y(",j,") = ", yRef[j])
+                for t in range(inp.nP):
+                    print("   z(",t,") = ",
+                    [cpx.solution.get_values(z_ilo[j][t][r]) for r in
+                    range(inp.nP)])
+
         if withPool==1:
             names = cpx.solution.pool.get_names()
             nPool = len(names)
@@ -822,16 +922,23 @@ class MIP:
                     yAux.append(cpx.solution.pool.get_values(n, y_ilo[j]))
                 yPool.append(yAux)
 
-        #  for i in range(nPool):
-            #  for j in range(inp.nI):
-                #  print("Sol ", i, " y[",j," ] = ", yPool[i][j])
-
-
         return ubBest
 
 
 
 class MIPReformulation(MIP):
+    """
+    .. class:MIPReformulation()
+
+    This class implements the SPL reformulation, which is the one currently
+    used in the code. The reformulation has been presented in the introduction
+    of this code and makes use of two sets of variables, i.e.:
+
+    * :math:`y_{jt}` : setup variables
+    * :math:`z_{jtr}`: production variables, indicating the amount of production of item *j* produced in period *t* to satisfy the demand of period *r*. Obviously, :math:`z_{jtr} = 0` for all *t>r*.
+
+
+    """
 
     def __init__(self, inp):
         y_ilo = []
@@ -839,12 +946,14 @@ class MIPReformulation(MIP):
 
         cpx = cplex.Cplex()
         cpx.objective.set_sense(cpx.objective.sense.minimize)
+        #  cpx.set_results_stream(None)
+        #  cpx.set_log_stream(None)
 
         #  create variables y_jt
         for j in range(inp.nI):
             y_ilo.append([])
             for t in range(inp.nP):
-                varName = "x." + str(j) + "." + str(t)
+                varName = "y." + str(j) + "." + str(t)
                 y_ilo[j].append(cpx.variables.get_num())
                 cpx.variables.add(obj   = [inp.f[j][t]],
                                   lb    = [0],
@@ -925,11 +1034,13 @@ class MIPReformulation(MIP):
 
 class WorkerLP:
     """
+    .. class:WorkerLP()
+
     Define and solve the subproblem. We initilize the subproblem with the right
     hand side values of the constraints to zero, since we assume the initial
     values of :math:`y_{jt}` to be equal to zero. Next, within the
-    ``separate()`` function, we define the rhs values to the correct values,
-    depending on the solution obtained from the master.
+    :meth:`WorkerLP.separate()` function, we define the rhs values to the 
+    correct values, depending on the solution obtained from the master.
 
     Cplex requires the presolve reductions to be turned off, using::
 
@@ -942,8 +1053,8 @@ class WorkerLP:
     .. note ::
 
         The subproblem constraints should be defined with a name, in
-        order to be able to recall the precise name of each constraint when we want
-        to obtain the dual values. Briefly, we need to:
+        order to be able to recall the precise name of each constraint when we 
+        want to obtain the dual values. Briefly, we need to:
 
         * define a unique name for each constraint, e.g., ``capacity.t`` for each t
         * store such names in a vector of names, e.g,::
@@ -1058,11 +1169,6 @@ class WorkerLP:
                                        rhs      = [inp.d[j][inp.nP-1]],
                                        names    = [constrName])
 
-        #  for i in range(20):
-        #      constr = cpx.linear_constraints.get_rows(i)
-        #      print(cpx.variables.get_names(constr.ind), constr.val, " =" ,
-        #      cpx.linear_constraints.get_rhs(i))
-
 
         #  logic constraints
         for j in range(inp.nI):
@@ -1093,12 +1199,14 @@ class WorkerLP:
 
     def separate(self, inp, ySol, zHat, y_ilo, z_ilo):
         """
-        Here is were Benders cut is obtained and passed to the master.
+        .. method:separate()
+
+        This is the *old* implementation, based on the standard Lot Sizing
+        formulation. Here is were Benders cut is obtained and passed to the master.
 
         The following steps describe the algorithm:
 
-        * update rhs values of the subproblem, i.e., using the current optimal
-            solution of the master problem :math:`y^*`
+        * update rhs values of the subproblem, i.e., using the current optimal solution of the master problem :math:`y^*`
         * solve the subproblem
         * get the dual values :math:`\lambda, \\nu`
         * generate cut (lhs and rhs) and store them in a constraint structure
@@ -1114,11 +1222,6 @@ class WorkerLP:
         lCapacity = self.lCapacity
         lLogic    = self.lLogic
         lDemand   = self.lDemand
-
-        #  print("MASTER SOL :: ")
-        #  for j in range(inp.nI):
-        #      aux = [t for t in range(inp.nP) if ySol[j][t] >= (1.0-_EPSI)]
-        #      print("item ", j, " :: ", aux)
 
         #  update rhs values : logic constraints
         for j in range(inp.nI):
@@ -1246,14 +1349,32 @@ class WorkerLP:
 
 
 class WorkerLPReformulation:
+    """
+    .. class:WorkerLPReformulation()
+
+        Formulation of the subproblem (the worker) using the SPL reformulation.
+        This is what is currently used in Benders' algorithm.
+    """
     def __init__(self, inp):
+        """
+
+        **Note**: The rhs value of both the logic constraints and the capacity
+        constraints, as well as the cumulative capacity constraints, will be
+        update during the separation phase, implemented in
+        :meth:`WorkerLPReformulation.separate()`, since the value of variables
+        :math:`y_{jt}` will be provided by the master. Here we thus initialize
+        these rhs values to either 0 or a convenient value.
+
+        Note the use of labels for constraints. These labels are needed to
+        access the dual values of those constraints in the separation phase.
+
+        """
 
         z_ilo = []
 
         cpx = cplex.Cplex()
         cpx.set_results_stream(None)
         cpx.set_log_stream(None)
-
 
         # Turn off the presolve reductions and set the CPLEX optimizer
         # to solve the worker LP with primal simplex method.
@@ -1342,7 +1463,7 @@ class WorkerLPReformulation:
                 #  for t in range(r):
                     #  cpx.variables.set_upper_bounds(z_ilo[j][t][r], inp.d[j][r])
 
-        # define labels for constraints
+        # define labels for constraints (used in separation to get dual values)
         lCapacity = ["capacity." + str(t) for t in range(inp.nP)]
         lDemand   = ["demand." + str(j) + "." + str(t) for j in range(inp.nI)
         for t in range(inp.nP)]
@@ -1359,6 +1480,13 @@ class WorkerLPReformulation:
         self.lcumLogic = lcumLogic
 
     def formulateDual(self, cpx, inp, ySol, w_ilo, l_ilo, v_ilo, e_ilo):
+        """
+        Formulation of the subproblem dual. This is no longer used, but I leave
+        it here for the sake of completeness. I checked that the formulation is
+        correct, since the objective function value of the optimal dual is
+        identical to that of the optimal primal.
+
+        """
 
         for j in range(inp.nI):
             w_ilo.append([])
@@ -1423,6 +1551,16 @@ class WorkerLPReformulation:
                                                names    = [constrName])
 
     def paretoOptimal(self, inp, ySol, zDual, zHat):
+        """
+        Get pareto optimal cuts. See paper for an explanation. In principle,
+        this should be helpful, since the dual problem is degenerate and,
+        consequently, multiple optimal solutions should exist. This means that
+        the "right" selection of dual values should make a difference in the
+        strength of the cut. However, the extra effort required to get pareto
+        optimal cuts does not seem to be compensated by the minor improvement
+        obtained here.
+
+        """
         cpx = cplex.Cplex()
 
         cpx.set_results_stream(None)
@@ -1472,34 +1610,15 @@ class WorkerLPReformulation:
         for t in range(inp.nP)]
         dLogic = [cpx.solution.get_values(e_ilo[j][t][r]) for j in
         range(inp.nI) for t in range(inp.nP) for r in range(t,inp.nP)]
-        #  evaluation
-        #  tot = 0.0
-        #  progr = 0
-        #  for j in range(inp.nI):
-        #      for t in range(inp.nP):
-        #          tot += dDemand[progr]*inp.d[j][t]
-        #          progr += 1
-        #  for t in range(inp.nP):
-        #      aux = inp.cap[t]
-        #      for j in range(inp.nI):
-        #          aux -= ySol[j][t]*inp.m[j][t]
-        #      tot += dCapacity[t]*aux
-        #  progr = 0
-        #  for j in range(inp.nI):
-        #      for t in range(inp.nP):
-        #          for r in range(t, inp.nP):
-        #              tot += ySol[j][t]*inp.d[j][r]*dLogic[progr]
-        #              progr += 1
-        #  progr = 0
-        #  for j in range(inp.nI):
-        #      for t in range(inp.nP):
-        #          tot += dcumLogic[progr]*inp.max_prod[j][t]*ySol[j][t]
-        #          progr += 1
-
-        #  print("Obj pareto = ", tot)
+        
         return dDemand, dCapacity, dcumLogic, dLogic
 
     def solveDual(self, inp, ySol, zHat):
+        """
+        Solve the dual problem (i.e., an explicit way of obtained the dual
+        values needed to create the optimality cut. It is no longer used.
+
+        """
 
         cpx = cplex.Cplex()
         cpx.set_results_stream(None)
@@ -1522,16 +1641,30 @@ class WorkerLPReformulation:
 
     def separate(self, inp, ySol, zHat, y_ilo, z_ilo_m):
         """
-        Here is were Benders cut is obtained and passed to the master.
+        .. method:separate()
+
+        This is the separation scheme for the WorkerLPReformulation, i.e., the
+        SPL reformulation. Here is were Benders cut is obtained and passed to 
+        the master.
 
         The following steps describe the algorithm:
 
-        * update rhs values of the subproblem, i.e., using the current optimal
-            solution of the master problem :math:`y^*`
+        * update rhs values of the subproblem, i.e., using the current optimal solution of the master problem :math:`y^*`
         * solve the subproblem
         * get the dual values :math:`\lambda, \\nu`
         * generate cut (lhs and rhs) and store them in a constraint structure
         * pass the cut to the master
+
+        Advanced cplex functions are used here, e.g.::
+        
+            farkas, pp = cpx.solution.advanced.dual_farkas()
+
+        to get Farkas certificates used to get the extreme rays, and::
+
+            dCapacity = cpx.solution.get_dual_values(lCapacity)
+
+        to get the dual values, which are used in the creation of optimality
+        cuts. 
 
         """
 
@@ -1626,13 +1759,6 @@ class WorkerLPReformulation:
             dDemand   = cpx.solution.get_dual_values(lDemand)
             dLogic    = cpx.solution.get_dual_values(lLogic)
             dcumLogic = cpx.solution.get_dual_values(lcumLogic)
-            #
-            #  print("demand = ", dDemand)
-            #  print("capacity = ", dCapacity)
-            #  print("cum     = ", dcumLogic)
-            #  print("logic   ", dLogic)
-            #  dDemand, dCapacity, dcumLogic, dLogic = self.solveDual(inp, ySol,
-            #  zHat)
 
             # method 2: the "standard" benders
             cutRhs = 0.0
@@ -2009,6 +2135,31 @@ def fixingToZero(inp, cpx, bestLB, bestUB, y_ilo, yFixed):
                 cpx.variables.set_upper_bounds(y_ilo[j][t], 0.0)
 
 def addCorridor(inp, cpx, ySol, y_ilo, cWidth):
+    """
+    .. func:addCorridor()
+
+    This function implements the corridor method for Benders' decomposition.
+    The idea can be described as follows: Every time a new incumbent solution
+    is found by the subproblem (i.e., a feasible solution which improves the
+    upper bound), a new best solution is obtained. Let us indicate with :math:`y^I` 
+    such solution. After adding the corresponding optimality cut to the master,
+    we also impose the following corridor constraint:
+
+    .. math ::
+        :nowrap:
+        
+        \\begin{equation}
+        \sum_{t=1}^T y^I_{jt}\left(1-y_{jt}\\right) + \left(1-y^I_{jt}\\right)y_{jt} \leq
+        \gamma nT
+        \end{equation}
+
+    which ensure that no more than :math:`\gamma` percent of the setup
+    variables will change value. This approach imposes a maximum hamming
+    distance with respect to the incumbent solution, thus
+    restricting the solution space of the master problem. This allows to speed up
+    the convergence of Benders' algorithm. 
+ 
+    """
     index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP)]
     value = [1-2*ySol[j][t] for j in range(inp.nI) for t in range(inp.nP)]
     rhsVal = cWidth - sum([ySol[j][t] for j in range(inp.nI) for t in
@@ -2040,22 +2191,54 @@ def getUB(inp, zSub, ySol):
     return z
 
 
-def benderAlgorithm(inp, fixToZero, fixToOne):
+def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
+    """
+    .. func:benderAlgorithm()
 
-    global cPercent
+    This function implements Benders' scheme without the use of callbacks. We
+    thus define a cycle that iteratively solves the master and the subproblems,
+    until a termination criterion is reached.
+    
+    The current implementation is heuristic in nature, since fixing schemes as
+    well as a corridor are used. Therefore, there is no guarantee that the
+    solution returned by this algorithm is optimal. To get an exact approach,
+    deactivate the fixing schemes (to zero and to one) and the corridor scheme.
+
+    We make use of an in-out cycle, in a fashion similar to what has been done
+    by Fischetti for the uncapacitated facility location problem (see their MS
+    paper.) Probably, this part could be improved, to make it faster. However,
+    it seems important to reach a good lower bound quickly. If the in-out cycle
+    is not used, the lower bound is much worse and the convergence is extremely
+    slow.
+
+    Another feature of the Benders' implementation is connected with the use of
+    a pool of solutions. Before calling Benders' algorithm, we heuristically
+    solve the original CLSP with a maximum number of solutions to be reached.
+    During this call to cplex, we collect a *pool* of solutions, which can be
+    used to tighten the master. The idea is that we then pass these solutions
+    to the separation scheme. Alternative approaches have been explored, e.g.,
+    producing feasible solutions using a Cross Entropy scheme and, then, apply
+    the separation mechanism to each of these solutions. To get the pool of
+    solution, it suffices to call :meth:`MIP.solve()` with the flag ``withPool=1``.
+
+    """
+
     globalProgr = 0
-    cWidth = max(cPercent*inp.nI*inp.nP, 1)
+
+    #  these are parameters for the corridor and the fixing schemes
+    nWidth = max(cPercent*inp.nI*inp.nP, 1)
+    nZero  = cZero*len(fixToZero)
+    nOne   = cOne*len(fixToOne)
+
     cpx = cplex.Cplex()
     #  cpx.set_results_stream(None)
     #  cpx.set_log_stream(None)
     createMaster(inp, cpx)
     worker = WorkerLPReformulation(inp)
-    #  worker = WorkerLP(inp)
     setCpxParameters(cpx)
 
     globalProgr = inOutCycle2(cpx, worker, y_ilo, z_ilo, inp, globalProgr)
     #  cpx.write("inout-12-15.lp")
-    #  exit(123)
     #  cpx.read("inout-12-15.lp")
     #  cpx.read("inout-6-15.lp")
     cpx.set_problem_type(cpx.problem_type.MILP)
@@ -2065,22 +2248,16 @@ def benderAlgorithm(inp, fixToZero, fixToOne):
 
     #  add some fixing scheme here
     print("FIX TO ZERO HERE = ", fixToZero)
-    rhsVal = 0.05*len(fixToZero)
     zero_cut = cplex.SparsePair(ind=fixToZero, val=[1.0]*len(fixToZero))
     cpx.linear_constraints.add(lin_expr = [zero_cut],
                                senses   = ["L"],
-                               rhs      = [rhsVal])
+                               rhs      = [nZero])
 #
     print("FIX TO ONE HERE = ", fixToOne)
-    #  for j in fixToZero:
-        #  print("Fixing to zero var ", j)
-        #  cpx.variables.set_upper_bounds(j,0.0)
-    #  add it as a cut
-    rhsVal = (1-0.1)*len(fixToOne)
     one_cut = cplex.SparsePair(ind=fixToOne, val=[1.0]*len(fixToOne))
     cpx.linear_constraints.add(lin_expr = [one_cut],
                                senses   = ["G"],
-                               rhs      = [rhsVal])
+                               rhs      = [nOne])
 
     print("Before adding cut to master : ", cpx.linear_constraints.get_num())
     for i in range(nPool):
@@ -2096,7 +2273,7 @@ def benderAlgorithm(inp, fixToZero, fixToOne):
     print("After adding Pool cut to master : ", cpx.linear_constraints.get_num())
 
     #  #  add corridor constraint
-    addCorridor(inp, cpx, yPool[0], y_ilo, cWidth)
+    addCorridor(inp, cpx, yPool[0], y_ilo, nWidth)
 
     #  initialize data structure
     yFixed = [ [0 for i in range(inp.nP)] for t in range(inp.nI)]
@@ -2112,6 +2289,7 @@ def benderAlgorithm(inp, fixToZero, fixToOne):
     maxTolerance = 0.01
     bestUB       = cplex.infinity
     gap          = cplex.infinity
+    # Benders' main cycle
     while not stopping:
         if nIter % 5 == 0:
             globalProgr = inOutCycle(cpx, worker, y_ilo, z_ilo, inp, globalProgr)
@@ -2122,17 +2300,14 @@ def benderAlgorithm(inp, fixToZero, fixToOne):
 
         cpx.solve()
         bestLB = cpx.solution.get_objective_value()
-        #  if (nIter % 5 ) == 0 and gap < 0.1:
-            #  fixingToZero(inp, cpx, bestLB, bestUB, y_ilo, yFixed)
-
         if (bestUB - bestLB) <= maxTolerance:
             stopping = 1
             continue
 
         #  get master solution
-        #  zHat, ySol = getSolution(inp, cpx, y_ilo, z_ilo, ySol, zHat)
         zHat, ySol = getSolution(inp, cpx, y_ilo, z_ilo)
 
+        #  solve subproblem and add separation cut
         cutType = worker.separate(inp, ySol, zHat, y_ilo, z_ilo)
         if cutType > 0:
             cutName = "cut." + str(nrCuts)
@@ -2147,9 +2322,7 @@ def benderAlgorithm(inp, fixToZero, fixToOne):
                 if ub < bestUB:
                     bestUB = ub
                     #  add corridor constraint
-                    addCorridor(inp, cpx, yPool[0], y_ilo, cWidth)
-                    print("... corridor added ...")
-                    input(" ... c ... ")
+                    addCorridor(inp, cpx, yPool[0], y_ilo, nWidth)
 
                 fixingToZero(inp, cpx, bestLB, bestUB, y_ilo, yFixed)
 
@@ -2177,30 +2350,51 @@ def main(argv):
     We first parse the command line, then reading the instance from a disk
     file.
 
-    The relevant part is the registration of the callback, obtained via::
+    The algorithm to be used is selected via command line using flag -a. See
+    :func:`parseCommandLine()` for more details on flags and options for this
+    code.
 
-         lazyBenders = cpx.register_callback(BendersLazyConsCallback)
+    With respect to the type of algorithms that can be used, we have:
+
+        1.  Benders Decomposition
+        2.  Lagrangean Relaxation
+        3.  Dantzig-Wolfe
+        4.  Cplex MIP solver
 
     """
 
     parseCommandLine(argv)
     inp = Instance(inputfile)
+    if algo == 1:
+        mip       = MIPReformulation(inp)
+        fixToZero = mip.solveLPZero(inp)
+        fixToOne  = mip.solveLPOne(inp)
+        zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
+        print("zHeur = ", zHeur)
+        benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne)
+        exit(101)
+    if algo == 2:
+        mip       = MIPReformulation(inp)
+        fixToZero = mip.solveLPZero(inp)
+        fixToOne  = mip.solveLPOne(inp)
+        lagrange = Lagrange(inp, 99999999)
+        lagrange.lagrangeanPhase(inp, mip, fixToZero, fixToOne, cPercent, cZero,
+        cOne)
+        exit(102)
+    if algo == 3:
+        dw = DantzigWolfe(inp)
+        dw.dw_cycle(inp)
+        exit(103)
+    if algo == 4: #  Cplex MIP solver
+        mip       = MIPReformulation(inp)
+        mip.solve(inp, withPrinting=1)
+        exit(104)
 
 
-    # activate this part if we want to solve the original MIP via cplex
-    #  mip = MIP(inp)
-    #  mip.solve(inp)
-    #  input(" ... now reformulation ... ")
-    mip = MIPReformulation(inp)
-    #  solve LP of full problem
-    fixToZero = mip.solveLPZero(inp)
-    fixToOne = mip.solveLPOne(inp)
-    zHeur = mip.solve(inp,withPool=1)
-    print("zHeur = ", zHeur)
-
-    benderAlgorithm(inp, fixToZero, fixToOne)
-    exit(145)
-
+    #  ======================================================================
+    #  All this stuff below is used to define cplex callback. This was the first
+    #  version of Benders implementation. It is no longer needed.
+    #  ======================================================================
     cpx = cplex.Cplex()
     cpxClone = cplex.Cplex()
     # create master and worker (subproblem)

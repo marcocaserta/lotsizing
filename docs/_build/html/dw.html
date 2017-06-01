@@ -1,0 +1,189 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>dw module &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    
+    <link rel="stylesheet" href="_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '1.0.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="module-dw">
+<span id="dw-module"></span><h1>dw module<a class="headerlink" href="#module-dw" title="Permalink to this headline">¶</a></h1>
+<hr class="docutils" />
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Filename:</th><td class="field-body">clspBenders.py</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Author:</th><td class="field-body">marco caserta</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Date:</th><td class="field-body">09.03.2017</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">01.06.17</td>
+</tr>
+</tbody>
+</table>
+<p>Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)</p>
+<p>(This document was generated on 01.06.17 at 09:19.)</p>
+<hr class="docutils" />
+<blockquote>
+<div><p>This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or (at your option)
+any later version.</p>
+<p>This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+more details.</p>
+<p>You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place - Suite 330, Boston, MA  02111-1307, USA.</p>
+</div></blockquote>
+<hr class="docutils" />
+<p>This code implements a Lagrangean relaxation scheme for the multi-item
+multi-period capacitated lot sizing problem.</p>
+<dl class="class">
+<dt id="dw.DantzigWolfe">
+<em class="property">class </em><code class="descclassname">dw.</code><code class="descname">DantzigWolfe</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal"><span class="pre">object</span></code></p>
+<dl class="method">
+<dt id="dw.DantzigWolfe.add_column_to_master">
+<code class="descname">add_column_to_master</code><span class="sig-paren">(</span><em>inp</em>, <em>item</em>, <em>q</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.add_column_to_master"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.add_column_to_master" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.add_dominated_column_to_master">
+<code class="descname">add_dominated_column_to_master</code><span class="sig-paren">(</span><em>inp</em>, <em>item</em>, <em>q</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.add_dominated_column_to_master"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.add_dominated_column_to_master" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.column_generation">
+<code class="descname">column_generation</code><span class="sig-paren">(</span><em>inp</em>, <em>u</em>, <em>alpha</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.column_generation"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.column_generation" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.define_master">
+<code class="descname">define_master</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.define_master"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.define_master" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.define_ulsp">
+<code class="descname">define_ulsp</code><span class="sig-paren">(</span><em>inp</em>, <em>cpx</em>, <em>u</em>, <em>alpha</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.define_ulsp"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.define_ulsp" title="Permalink to this definition">¶</a></dt>
+<dd><p>This is the SINGLE ITEM uncapacitated problem.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.dw_cycle">
+<code class="descname">dw_cycle</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.dw_cycle"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.dw_cycle" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.get_columns">
+<code class="descname">get_columns</code><span class="sig-paren">(</span><em>inp</em>, <em>item</em>, <em>u</em>, <em>alpha</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.get_columns"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.get_columns" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.get_master_solution">
+<code class="descname">get_master_solution</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.get_master_solution"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.get_master_solution" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.initialize_multipliers">
+<code class="descname">initialize_multipliers</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.initialize_multipliers"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.initialize_multipliers" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="dw.DantzigWolfe.solve_ulsp">
+<code class="descname">solve_ulsp</code><span class="sig-paren">(</span><em>inp</em>, <em>cpx</em>, <em>u</em>, <em>alpha</em>, <em>item</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw.html#DantzigWolfe.solve_ulsp"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw.DantzigWolfe.solve_ulsp" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/dw.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2017, Marco Caserta.
+      Last updated on Jun 01, 2017.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+  </body>
+</html>

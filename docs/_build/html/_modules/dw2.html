@@ -1,0 +1,703 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>dw2 &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '1.0.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for dw2</h1><div class="highlight"><pre>
+<span></span><span class="ch">#!/usr/bin/python</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">===========================================================================</span>
+
+<span class="sd">:Filename: clspBenders.py</span>
+<span class="sd">:Author: marco caserta</span>
+<span class="sd">:Date: 09.03.2017</span>
+<span class="sd">:Last Update: |date|</span>
+
+<span class="sd">.. |date| date:: %d.%m.%y</span>
+<span class="sd">.. |time| date:: %H:%M</span>
+
+<span class="sd">Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)</span>
+
+<span class="sd">(This document was generated on |date| at |time|.)</span>
+
+<span class="sd">.. this is just a comment</span>
+
+<span class="sd">===========================================================================</span>
+
+<span class="sd">   This program is free software; you can redistribute it and/or modify it</span>
+<span class="sd">   under the terms of the GNU General Public License as published by the Free</span>
+<span class="sd">   Software Foundation; either version 2 of the License, or (at your option)</span>
+<span class="sd">   any later version.</span>
+
+<span class="sd">   This program is distributed in the hope that it will be useful, but WITHOUT</span>
+<span class="sd">   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or</span>
+<span class="sd">   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for</span>
+<span class="sd">   more details.</span>
+
+<span class="sd">   You should have received a copy of the GNU General Public License along with</span>
+<span class="sd">   this program; if not, write to the Free Software Foundation, Inc., 59 Temple</span>
+<span class="sd">   Place - Suite 330, Boston, MA  02111-1307, USA.</span>
+
+<span class="sd">===========================================================================</span>
+
+<span class="sd">This code implements a Lagrangean relaxation scheme for the multi-item</span>
+<span class="sd">multi-period capacitated lot sizing problem.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span><span class="o">,</span> <span class="nn">getopt</span>
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">import</span> <span class="nn">cplex</span>
+<span class="kn">from</span> <span class="nn">time</span> <span class="k">import</span> <span class="n">time</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">from</span> <span class="nn">decimal</span> <span class="k">import</span> <span class="o">*</span>
+<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">27</span><span class="p">)</span>
+
+<span class="n">_INFTY</span>   <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">float_info</span><span class="o">.</span><span class="n">max</span>
+<span class="c1">#  _EPSI = sys.float_info.epsilon</span>
+<span class="n">_EPSI</span>    <span class="o">=</span> <span class="mf">0.00001</span>
+<span class="n">bigM</span>     <span class="o">=</span> <span class="mf">1.0e8</span>
+<span class="n">nSolInPool</span> <span class="o">=</span><span class="mi">1000000</span>
+<span class="n">maxIter</span>  <span class="o">=</span> <span class="mi">40</span>
+
+
+<div class="viewcode-block" id="DantzigWolfe"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe">[docs]</a><span class="k">class</span> <span class="nc">DantzigWolfe</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">y_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">yWW</span>   <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xWW</span>   <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sWW</span>   <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">Cplex</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_sense</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">sense</span><span class="o">.</span><span class="n">minimize</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">set_results_stream</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">set_log_stream</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">define_master</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+
+        <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initialize_multipliers</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">Cplex</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_sense</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">sense</span><span class="o">.</span><span class="n">minimize</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">set_results_stream</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">set_log_stream</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">set_warning_stream</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">define_ulsp</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="DantzigWolfe.initialize_multipliers"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.initialize_multipliers">[docs]</a>    <span class="k">def</span> <span class="nf">initialize_multipliers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="n">u</span>     <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">return</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span></div>
+
+
+<div class="viewcode-block" id="DantzigWolfe.define_master"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.define_master">[docs]</a>    <span class="k">def</span> <span class="nf">define_master</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Define the master problem and include the column corresponding to an</span>
+<span class="sd">        arbitrarily high initial inventory (s_{j0}), with high cost. This ensures</span>
+<span class="sd">        that a feasible solution is always available.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cpxMaster</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span>
+        <span class="n">l_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span>
+        <span class="n">n_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span>
+        <span class="n">k</span>         <span class="o">=</span> <span class="mi">0</span>  <span class="c1">#  column 0 corresponds to initial inventory</span>
+
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">varName</span> <span class="o">=</span> <span class="s2">&quot;lambda.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+            <span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+            <span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                              <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                              <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                              <span class="c1"># types = [&quot;B&quot;],</span>
+                              <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+            <span class="n">varName</span> <span class="o">=</span> <span class="s2">&quot;mu.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">n_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+            <span class="n">n_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+
+            <span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span> <span class="o">=</span> <span class="p">[</span><span class="n">bigM</span><span class="p">],</span>
+                <span class="n">lb</span>                <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                <span class="n">ub</span>                <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">],</span>
+                <span class="c1"># types             = [&quot;C&quot;],</span>
+                <span class="n">names</span>             <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+        
+        <span class="c1">#  add constraints and define names</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">capacity_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">capacity_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;L&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">cap</span><span class="p">[</span><span class="n">t</span><span class="p">]],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;convexity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">k</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">]</span>
+            <span class="n">convexity_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">convexity_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;E&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;linking.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">n_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">k</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">k</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span>
+            <span class="n">linking_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">linking_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;E&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="c1">#  define labels to access constraints</span>
+        <span class="n">lCapacity</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">lConvexity</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;convexity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span>
+        <span class="n">lLinking</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;linking.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span>
+        <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)]</span> 
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span>  <span class="o">=</span> <span class="n">cpxMaster</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lCapacity</span>  <span class="o">=</span> <span class="n">lCapacity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lConvexity</span> <span class="o">=</span> <span class="n">lConvexity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lLinking</span>   <span class="o">=</span> <span class="n">lLinking</span></div>
+
+<div class="viewcode-block" id="DantzigWolfe.get_master_solution"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.get_master_solution">[docs]</a>    <span class="k">def</span> <span class="nf">get_master_solution</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="n">cpxMaster</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span>
+        <span class="n">u</span>         <span class="o">=</span> <span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_dual_values</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lCapacity</span><span class="p">)</span>
+        <span class="n">alpha</span>     <span class="o">=</span> <span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_dual_values</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lConvexity</span><span class="p">)</span>
+
+        <span class="n">l_ilo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">aux</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">])):</span>
+                <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;linking.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+                <span class="c1">#  print(&quot;alpha_&quot;,j,&quot;.&quot;,k,&quot;=&quot;,</span>
+                <span class="c1">#  cpxMaster.solution.get_dual_values(constrName))</span>
+                <span class="n">aux</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_dual_values</span><span class="p">(</span><span class="n">constrName</span><span class="p">))</span>
+            <span class="n">theta</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">aux</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span></div>
+
+<div class="viewcode-block" id="DantzigWolfe.define_ulsp"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.define_ulsp">[docs]</a>    <span class="k">def</span> <span class="nf">define_ulsp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="n">cpxSub</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span>
+        <span class="n">y_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">y_ilo</span>
+        <span class="n">x_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span>
+        <span class="n">s_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span>
+
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">varName</span> <span class="o">=</span> <span class="s2">&quot;y.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">y_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                 <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                 <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                                 <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;B&quot;</span><span class="p">],</span>
+                                 <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+            <span class="n">varName</span> <span class="o">=</span> <span class="s2">&quot;x.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">x_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                 <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                 <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                 <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;C&quot;</span><span class="p">],</span>
+                                 <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+            <span class="n">varName</span> <span class="o">=</span> <span class="s2">&quot;s.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">s_ilo</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                 <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                 <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="n">cplex</span><span class="o">.</span><span class="n">infinity</span><span class="p">],</span>
+                                 <span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;C&quot;</span><span class="p">],</span>
+                                 <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="c1"># demand constraints</span>
+        <span class="c1">#  first period</span>
+        <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span>
+        <span class="c1">#  value = [1.0, 1.0, -1.0]</span>
+        <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                   <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;E&quot;</span><span class="p">],</span>
+                                   <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                   <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+        <span class="c1">#  periods 2 to T-1</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span>
+            <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;E&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="c1">#  last period</span>
+        <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="o">-</span><span class="mi">2</span><span class="p">]]</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]</span>
+        <span class="n">demand_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">demand_constraint</span><span class="p">],</span>
+                                   <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;E&quot;</span><span class="p">],</span>
+                                   <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                   <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="c1">#  logic constraints</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;logic.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">y_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">]]</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]</span>
+            <span class="n">logic_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span> <span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">logic_constraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;L&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span> <span class="o">=</span> <span class="n">cpxSub</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">y_ilo</span> <span class="o">=</span> <span class="n">y_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span> <span class="o">=</span> <span class="n">x_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span> <span class="o">=</span> <span class="n">s_ilo</span></div>
+
+<div class="viewcode-block" id="DantzigWolfe.solve_ulsp"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.solve_ulsp">[docs]</a>    <span class="k">def</span> <span class="nf">solve_ulsp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Solve ULS for a given set of multipliers u and alpha.</span>
+<span class="sd">        The item for which this problem is solved is given in &quot;item&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cpxSub</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span>
+        <span class="n">y_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">y_ilo</span>
+        <span class="n">x_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span>
+        <span class="n">s_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span>
+
+        <span class="c1"># change objective function coefficients and bounds</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">coeff</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_linear</span><span class="p">(</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">coeff</span><span class="p">)</span>
+            <span class="n">coeff</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">c</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">a</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_linear</span><span class="p">(</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">coeff</span><span class="p">)</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">objective</span><span class="o">.</span><span class="n">set_linear</span><span class="p">(</span><span class="n">s_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">h</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">])</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">set_upper_bounds</span><span class="p">(</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">])</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">set_upper_bounds</span><span class="p">(</span><span class="n">s_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">])</span>
+
+        <span class="c1"># change rhs of demand  and logic constraints</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;demand.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_rhs</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">])</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;logic.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_coefficients</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span> <span class="n">y_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">],</span>
+            <span class="o">-</span><span class="n">inp</span><span class="o">.</span><span class="n">max_prod</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">])</span>
+
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;sub&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.lp&quot;</span><span class="p">)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">solve</span><span class="p">()</span>
+        <span class="n">rc</span>  <span class="o">=</span> <span class="n">cpxSub</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_objective_value</span><span class="p">()</span>
+        <span class="n">rc</span> <span class="o">-=</span> <span class="n">alpha</span><span class="p">[</span><span class="n">item</span><span class="p">]</span>
+        <span class="c1">#  print (&quot;z_WW(&quot;,item,&quot;) = &quot;, rc+alpha[item], &quot; and rc = &quot;, rc)</span>
+
+        <span class="n">yWW</span>  <span class="o">=</span> <span class="p">[</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">xWW</span>  <span class="o">=</span> <span class="p">[</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">x_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">sWW</span>  <span class="o">=</span> <span class="p">[</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">s_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+
+        <span class="c1">#  recompute</span>
+        <span class="c1">#  z = 0.0</span>
+        <span class="c1">#  for t in range(inp.nP):</span>
+        <span class="c1">#      if yWW[t] &gt;= 1.0 - _EPSI:</span>
+        <span class="c1">#          z += inp.f[item][t] - u[t]*inp.m[item][t]</span>
+        <span class="c1">#      z += (inp.c[item][t] - u[t]*inp.a[item][t])*xWW[t]</span>
+        <span class="c1">#      z += sWW[t]*inp.h[item][t]</span>
+        <span class="c1">#  z -= alpha[item]</span>
+        <span class="c1">#  print(&quot; ... ... ... recomputed rc = &quot;, z)</span>
+        <span class="c1">#  if abs(z - rc) &gt; 0.00001:</span>
+        <span class="c1">#      print(&quot;problems here ... &quot;)</span>
+        <span class="c1">#      print(&quot;y = &quot;, yWW, &quot; with costs = &quot;,</span>
+        <span class="c1">#      [inp.f[item][t]-u[t]*inp.m[item][t] for t in range(inp.nP)])</span>
+        <span class="c1">#      print(&quot;x = &quot;, xWW, &quot; with cots  = &quot;,</span>
+        <span class="c1">#      [inp.c[item][t]-u[t]*inp.a[item][t] for t in range(inp.nP)])</span>
+        <span class="c1">#      print(&quot;s = &quot;, sWW, &quot; with costs = &quot;, inp.h[item][t])</span>
+        <span class="c1">#</span>
+        <span class="c1">#      input (&quot; aka &quot;)</span>
+
+
+
+
+        <span class="c1"># if item == 2:</span>
+        <span class="c1">#     print(&quot;Sol item 2 = &quot;)</span>
+        <span class="c1">#     print(yWW)</span>
+        <span class="c1">#     print(&quot;  &quot;, xWW)</span>
+        <span class="c1">#     print(&quot;  &quot;, sWW)</span>
+        <span class="c1">#     print(&quot;sI = &quot;, sIWW)</span>
+        <span class="c1">#     z = 0</span>
+        <span class="c1">#     for t in range(inp.nP):</span>
+        <span class="c1">#         z += (inp.f[item][t] - u[t]*inp.m[item][t])*yWW[t]</span>
+        <span class="c1">#         z += (inp.c[item][t] - u[t]*inp.a[item][t])*xWW[t]</span>
+        <span class="c1">#         z += sWW[t]*inp.h[item][t]</span>
+        <span class="c1">#</span>
+        <span class="c1">#     print(&quot; --- &gt; recomputed z = &quot;, z)</span>
+        <span class="c1">#</span>
+        <span class="c1">#     zOpt = []</span>
+        <span class="c1">#     yOpt =  [0.0, 1.0, 0.0, 1.0, 0.0]</span>
+        <span class="c1">#     xOpt =  [0.0, 201.0, 0.0, 185.0, 0.0]</span>
+        <span class="c1">#     sOpt =  [0.0, 124.0, 0.0, 79.0, 0.0]</span>
+        <span class="c1">#</span>
+        <span class="c1">#     z = 0.0</span>
+        <span class="c1">#     for t in range(inp.nP):</span>
+        <span class="c1">#         z += (inp.f[item][t] - u[t]*inp.m[item][t])*yOpt[t]</span>
+        <span class="c1">#         z += (inp.c[item][t] - u[t]*inp.a[item][t])*xOpt[t]</span>
+        <span class="c1">#         z += sOpt[t]*inp.h[item][t]</span>
+        <span class="c1">#</span>
+        <span class="c1">#     print(&quot; --- comparing sol vs optimal : &quot;, z)</span>
+        <span class="c1">#     if z &lt; rc:</span>
+        <span class="c1">#         print(&quot;problem here ... &quot;)</span>
+        <span class="c1">#         exit(111)</span>
+
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">yWW</span>  <span class="o">=</span> <span class="n">yWW</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xWW</span>  <span class="o">=</span> <span class="n">xWW</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sWW</span>  <span class="o">=</span> <span class="n">sWW</span>
+
+        <span class="k">return</span> <span class="n">rc</span></div>
+
+
+<div class="viewcode-block" id="DantzigWolfe.add_column_to_master"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.add_column_to_master">[docs]</a>    <span class="k">def</span> <span class="nf">add_column_to_master</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">q</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Note: &quot;q&quot; is the index of the convex set of dominated solutions.</span>
+<span class="sd">        q = 0 --&gt; undominated WW solution</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        
+        <span class="n">lLinking</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lLinking</span>
+        <span class="n">l_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span>
+        <span class="n">n_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span>
+        <span class="n">cpxMaster</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span>
+        <span class="n">yWW</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yWW</span>
+        <span class="n">xWW</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xWW</span>
+        <span class="n">sWW</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sWW</span>
+
+        <span class="n">nrVars</span>     <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">])</span>
+        <span class="n">varName</span>   <span class="o">=</span> <span class="s2">&quot;lambda.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nrVars</span><span class="p">)</span>
+
+        <span class="n">l_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+        <span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                                <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="n">varName</span> <span class="o">=</span> <span class="s2">&quot;mu.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nrVars</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+        <span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+        <span class="n">coeff</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">([</span><span class="n">inp</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">yWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">c</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">xWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span>
+        <span class="n">inp</span><span class="o">.</span><span class="n">h</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">sWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)])</span> 
+        <span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">coeff</span><span class="p">],</span>
+                                <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                                <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="c1"># add variables to the corresponding constraints</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">yWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">_EPSI</span><span class="p">:</span>
+                <span class="n">cap</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">a</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">xWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cap</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_coefficients</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span>
+            <span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">][</span><span class="n">q</span><span class="p">],</span> <span class="n">cap</span><span class="p">)</span>
+        <span class="c1">#     cpxMaster.linear_constraints.set_coefficients(zip(constrName, index,</span>
+        <span class="c1">#     value))</span>
+
+        <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;convexity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_coefficients</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span>
+        <span class="n">l_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">],</span><span class="mf">1.0</span><span class="p">)</span>
+
+        <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;linking.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nrVars</span><span class="p">)</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">][</span><span class="n">q</span><span class="p">],</span> <span class="n">l_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">]]</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">]</span>
+        <span class="n">linking_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">linking_constraint</span><span class="p">],</span>
+                                   <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;E&quot;</span><span class="p">],</span>
+                                   <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">],</span>
+                                   <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+        <span class="n">lLinking</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">constrName</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">lLinking</span>  <span class="o">=</span> <span class="n">lLinking</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span> <span class="o">=</span> <span class="n">cpxMaster</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span>     <span class="o">=</span> <span class="n">l_ilo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span>     <span class="o">=</span> <span class="n">n_ilo</span></div>
+
+<div class="viewcode-block" id="DantzigWolfe.compute_rc"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.compute_rc">[docs]</a>    <span class="k">def</span> <span class="nf">compute_rc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">):</span>
+        <span class="n">rc</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">y</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mf">1.0</span><span class="o">-</span><span class="n">_EPSI</span><span class="p">:</span>
+                <span class="n">rc</span> <span class="o">+=</span> <span class="n">inp</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span>
+                <span class="n">rc</span> <span class="o">+=</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">c</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">a</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">])</span><span class="o">*</span><span class="n">x</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">s</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">_EPSI</span><span class="p">:</span>
+                <span class="n">rc</span> <span class="o">+=</span> <span class="n">inp</span><span class="o">.</span><span class="n">h</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">s</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">rc</span> <span class="o">-=</span> <span class="n">alpha</span><span class="p">[</span><span class="n">item</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">rc</span></div>
+            
+<div class="viewcode-block" id="DantzigWolfe.column_generation"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.column_generation">[docs]</a>    <span class="k">def</span> <span class="nf">column_generation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span><span class="p">):</span>
+        <span class="n">cpxSub</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span>
+        <span class="n">stopping</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="c1">#  print(&quot;====================&quot;)</span>
+            <span class="c1">#  print(&quot;* ITEM &quot;, j)</span>
+            <span class="c1">#  print(&quot;====================&quot;)</span>
+            <span class="n">rc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_ulsp</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+            <span class="c1">#  print(&quot;WW solution (q=0)&quot;)</span>
+            <span class="c1">#  print(&quot;yWW :: &quot;, self.yWW)</span>
+            <span class="c1">#  print(&quot;xWW :: &quot;, self.xWW)</span>
+            <span class="c1">#  print(&quot;sWW :: &quot;, self.sWW)</span>
+            <span class="c1">#  if rc &lt; -_EPSI or self.iterNr &lt;= 1:</span>
+            <span class="k">if</span> <span class="n">rc</span> <span class="o">&lt;</span> <span class="mi">10000</span><span class="o">*</span><span class="n">_EPSI</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterNr</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">stopping</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">add_column_to_master</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">get_columns</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span>
+            <span class="c1">#  input(&quot;.. next item ..&quot;)</span>
+
+        <span class="k">return</span> <span class="n">stopping</span></div>
+        
+<div class="viewcode-block" id="DantzigWolfe.add_dominated_column_to_master"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.add_dominated_column_to_master">[docs]</a>    <span class="k">def</span> <span class="nf">add_dominated_column_to_master</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">q</span><span class="p">):</span>
+        <span class="n">cpxMaster</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span>
+        <span class="n">lLinking</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lLinking</span>
+        <span class="n">l_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span>
+        <span class="n">n_ilo</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span>
+        <span class="n">yWW</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yWW</span>
+        <span class="n">xWW</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xWW</span>
+        <span class="n">sWW</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sWW</span>
+        <span class="c1">#  print(&quot;Solution q = &quot;, q)</span>
+        <span class="c1">#  print(&quot;y = &quot;, yWW)</span>
+        <span class="c1">#  print(&quot;x = &quot;, xWW)</span>
+        <span class="c1">#  print(&quot;s = &quot;, sWW)</span>
+
+        <span class="n">nrVars</span>    <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">])</span><span class="o">-</span><span class="mi">1</span>
+        <span class="n">nrSubVar</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">])</span>
+        <span class="c1">#  print(&quot;How many mu vars do we have for this lambda?&quot;)</span>
+        <span class="c1">#  print(&quot;nr = &quot;, nrSubVar)</span>
+        <span class="c1">#  print(&quot;vs = &quot;, n_ilo[item][nrVars])</span>
+        <span class="c1">#  input(&quot;aaa&quot;)</span>
+        <span class="c1">#  varName = &quot;mu.&quot; + str(item) + &quot;.&quot; + str(nrVars) + &quot;.&quot; + str(nrSubVar)</span>
+        <span class="n">varName</span> <span class="o">=</span> <span class="s2">&quot;mu.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nrVars</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">q</span><span class="p">)</span>
+        <span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">get_num</span><span class="p">())</span>
+        <span class="n">coeff</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">([</span><span class="n">inp</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">yWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">c</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">xWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span>
+        <span class="n">inp</span><span class="o">.</span><span class="n">h</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">sWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)])</span> 
+
+        <span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span>   <span class="o">=</span> <span class="p">[</span><span class="n">coeff</span><span class="p">],</span>
+                                <span class="n">lb</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                <span class="n">ub</span>    <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                                <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">varName</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;capacity.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">yWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="o">-</span><span class="n">_EPSI</span><span class="p">:</span>
+                <span class="n">cap</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">m</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span> <span class="n">inp</span><span class="o">.</span><span class="n">a</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">t</span><span class="p">]</span><span class="o">*</span><span class="n">xWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cap</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_coefficients</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span>
+            <span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">][</span><span class="n">nrSubVar</span><span class="p">],</span> <span class="n">cap</span><span class="p">)</span>
+            <span class="c1">#  n_ilo[item][nrVars][q], cap)</span>
+
+        <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;linking.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nrVars</span><span class="p">)</span>
+        <span class="n">cpxMaster</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">set_coefficients</span><span class="p">(</span><span class="n">constrName</span><span class="p">,</span>
+        <span class="n">n_ilo</span><span class="p">[</span><span class="n">item</span><span class="p">][</span><span class="n">nrVars</span><span class="p">][</span><span class="n">nrSubVar</span><span class="p">],</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="c1">#  n_ilo[item][nrVars][q], 1.0)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span> <span class="o">=</span> <span class="n">cpxMaster</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span>    <span class="o">=</span> <span class="n">n_ilo</span></div>
+        
+<div class="viewcode-block" id="DantzigWolfe.get_columns"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.get_columns">[docs]</a>    <span class="k">def</span> <span class="nf">get_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">):</span>
+        <span class="n">cpxSub</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxSub</span>
+        <span class="n">y_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">y_ilo</span>
+        <span class="n">x_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x_ilo</span>
+        <span class="n">s_ilo</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s_ilo</span>
+        <span class="n">yWW</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yWW</span> <span class="c1">#  get the current WW solution</span>
+
+        <span class="c1">#  add WW constraint to find &quot;dominated&quot; setup plans</span>
+        <span class="n">lDominated</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
+            <span class="n">constrName</span> <span class="o">=</span> <span class="s2">&quot;dominated.&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">lDominated</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">constrName</span><span class="p">)</span>
+            <span class="n">sub_contraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="p">[</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">]],</span> <span class="n">val</span><span class="o">=</span><span class="p">[</span><span class="mf">1.0</span><span class="p">])</span>
+            <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">sub_contraint</span><span class="p">],</span>
+                                       <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;L&quot;</span><span class="p">],</span>
+                                       <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">yWW</span><span class="p">[</span><span class="n">t</span><span class="p">]],</span>
+                                       <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="n">constrName</span><span class="p">])</span>
+
+        <span class="n">rhs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="nb">sum</span><span class="p">([</span><span class="n">yWW</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)])</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">y_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">1</span><span class="o">-</span><span class="mi">2</span><span class="o">*</span><span class="n">yWW</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+        <span class="n">diff_constraint</span> <span class="o">=</span> <span class="n">cplex</span><span class="o">.</span><span class="n">SparsePair</span><span class="p">(</span><span class="n">ind</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">lin_expr</span> <span class="o">=</span> <span class="p">[</span><span class="n">diff_constraint</span><span class="p">],</span>
+                                   <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;G&quot;</span><span class="p">],</span>
+                                   <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">rhs</span><span class="p">],</span>
+                                   <span class="n">names</span>    <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;different&quot;</span><span class="p">])</span>
+
+        <span class="c1">#  first, we solve the ULSP, and then we call the populate solution</span>
+        <span class="c1">#  self.cpxSub.parameters.mip.tolerances.absmipgap.set()</span>
+        <span class="c1">#  self.cpxSub.parameters.mip.tolerances.mipgap.set(0.05)</span>
+        <span class="c1">#  cpxSub.solve()</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">mip</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">intensity</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">mip</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">capacity</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">nSolInPool</span><span class="p">)</span>
+        <span class="c1">#  cpxSub.parameters.mip.pool.relgap.set(0.9)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">mip</span><span class="o">.</span><span class="n">limits</span><span class="o">.</span><span class="n">populate</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">nSolInPool</span><span class="p">)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">populate_solution_pool</span><span class="p">()</span>
+
+        <span class="c1"># collecting pool solutions (one of them should be WW)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="n">cpxSub</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">get_names</span><span class="p">()</span>
+        <span class="n">nPool</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
+        <span class="c1">#  print(&quot;POOL size = &quot;, nPool)</span>
+        <span class="c1">#  for n in names:</span>
+        <span class="c1">#      print(&quot;z(&quot;,n,&quot;) = &quot;, cpxSub.solution.pool.get_objective_value(n))</span>
+            
+        <span class="n">q</span>     <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
+            <span class="c1">#  rc = cpxSub.solution.pool.get_objective_value(n) - alpha[item]</span>
+            <span class="c1">#  if rc &lt;= -_EPSI:</span>
+                <span class="c1">#  yAux      = [cpxSub.solution.get_values(y_ilo[t]) for t in range(inp.nP)]</span>
+            <span class="c1">#  self.yWW  = [cpxSub.solution.get_values(y_ilo[t]) for t in range(inp.nP)]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">xWW</span>  <span class="o">=</span> <span class="p">[</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">x_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sWW</span>  <span class="o">=</span> <span class="p">[</span><span class="n">cpxSub</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">pool</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">s_ilo</span><span class="p">[</span><span class="n">t</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">)]</span>
+                <span class="c1">#  rc = self.compute_rc(inp, item, self.yWW, self.xWW, self.sWW, u, alpha)</span>
+                <span class="c1">#  input(&quot;...aka&quot;)</span>
+                <span class="c1">#  if rc &lt;= -_EPSI:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add_dominated_column_to_master</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>
+            <span class="n">q</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">lDominated</span><span class="p">)</span>
+        <span class="n">cpxSub</span><span class="o">.</span><span class="n">linear_constraints</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="s2">&quot;different&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DantzigWolfe.dw_cycle"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe.dw_cycle">[docs]</a>    <span class="k">def</span> <span class="nf">dw_cycle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        
+        <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initialize_multipliers</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">iterNr</span>     <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">stopping</span>        <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">stopping</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterNr</span> <span class="o">&lt;</span> <span class="n">maxIter</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">iterNr</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">stopping</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">column_generation</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solve</span><span class="p">()</span>
+            <span class="c1">#  self.cpxMaster.write(&quot;master.lp&quot;)</span>
+            <span class="n">u</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">theta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_master_solution</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+            <span class="n">nLambda</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">([</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">)])</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;MASTER INFO :: z(</span><span class="si">{0:3d}</span><span class="s2">) = </span><span class="si">{1:15.2f}</span><span class="s2"> -- size :: lambda =</span><span class="se">\</span>
+<span class="s2">            </span><span class="si">{2:5d}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iterNr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_objective_value</span><span class="p">(),</span> <span class="n">nLambda</span><span class="p">))</span>
+            
+        
+        <span class="c1"># redefine master as MIP and solve it</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">set_problem_type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">problem_type</span><span class="o">.</span><span class="n">MILP</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">])):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">set_types</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">k</span><span class="p">],</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">variables</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">binary</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;MIP.lp&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">mip</span><span class="o">.</span><span class="n">tolerances</span><span class="o">.</span><span class="n">absmipgap</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">_EPSI</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">mip</span><span class="o">.</span><span class="n">tolerances</span><span class="o">.</span><span class="n">mipgap</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">_EPSI</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solve</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;MIP = &quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_objective_value</span><span class="p">())</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;STATUS = &quot;</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">status</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_status</span><span class="p">()])</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nI</span><span class="p">):</span>
+            <span class="n">lSol</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpxMaster</span><span class="o">.</span><span class="n">solution</span><span class="o">.</span><span class="n">get_values</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;lambda = &quot;</span><span class="p">,</span> <span class="n">lSol</span><span class="p">)</span></div></div>
+        
+        
+
+        
+
+
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2017, Marco Caserta.
+      Last updated on Jun 01, 2017.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+  </body>
+</html>
