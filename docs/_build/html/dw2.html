@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>dw2 module &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    <title>dw2 module &#8212; MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</title>
     
     <link rel="stylesheet" href="_static/classic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -25,7 +25,9 @@
     <script type="text/javascript" src="_static/underscore.js"></script>
     <script type="text/javascript" src="_static/doctools.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" /> 
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="lagrange module" href="lagrange.html" />
+    <link rel="prev" title="clspBenders module" href="clspBenders.html" /> 
   </head>
   <body role="document">
     <div class="related" role="navigation" aria-label="related navigation">
@@ -37,7 +39,13 @@
         <li class="right" >
           <a href="py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+        <li class="right" >
+          <a href="lagrange.html" title="lagrange module"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="clspBenders.html" title="clspBenders module"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li> 
       </ul>
     </div>  
 
@@ -53,18 +61,18 @@
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
-<tr class="field-odd field"><th class="field-name">Filename:</th><td class="field-body">clspBenders.py</td>
+<tr class="field-odd field"><th class="field-name">Filename:</th><td class="field-body">dw2.py</td>
 </tr>
 <tr class="field-even field"><th class="field-name">Author:</th><td class="field-body">marco caserta</td>
 </tr>
 <tr class="field-odd field"><th class="field-name">Date:</th><td class="field-body">09.03.2017</td>
 </tr>
-<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">01.06.17</td>
+<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">05.06.17</td>
 </tr>
 </tbody>
 </table>
 <p>Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)</p>
-<p>(This document was generated on 01.06.17 at 09:19.)</p>
+<p>(This document was generated on 05.06.17 at 13:32.)</p>
 <hr class="docutils" />
 <blockquote>
 <div><p>This program is free software; you can redistribute it and/or modify it
@@ -80,12 +88,13 @@ this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place - Suite 330, Boston, MA  02111-1307, USA.</p>
 </div></blockquote>
 <hr class="docutils" />
-<p>This code implements a Lagrangean relaxation scheme for the multi-item
+<p>This code implements a Dantzig-Wolfe reformulation scheme for the multi-item
 multi-period capacitated lot sizing problem.</p>
 <dl class="class">
 <dt id="dw2.DantzigWolfe">
 <em class="property">class </em><code class="descclassname">dw2.</code><code class="descname">DantzigWolfe</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw2.html#DantzigWolfe"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw2.DantzigWolfe" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal"><span class="pre">object</span></code></p>
+<p>This class implements a Dantzig-Wolfe reformulation scheme for the CLSP.</p>
 <dl class="method">
 <dt id="dw2.DantzigWolfe.add_column_to_master">
 <code class="descname">add_column_to_master</code><span class="sig-paren">(</span><em>inp</em>, <em>item</em>, <em>q</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dw2.html#DantzigWolfe.add_column_to_master"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#dw2.DantzigWolfe.add_column_to_master" title="Permalink to this definition">¶</a></dt>
@@ -158,6 +167,12 @@ The item for which this problem is solved is given in &#8220;item&#8221;.</p>
       </div>
       <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
         <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="clspBenders.html"
+                        title="previous chapter">clspBenders module</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="lagrange.html"
+                        title="next chapter">lagrange module</a></p>
   <div role="note" aria-label="source link">
     <h3>This Page</h3>
     <ul class="this-page-menu">
@@ -188,12 +203,18 @@ The item for which this problem is solved is given in &#8220;item&#8221;.</p>
         <li class="right" >
           <a href="py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+        <li class="right" >
+          <a href="lagrange.html" title="lagrange module"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="clspBenders.html" title="clspBenders module"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li> 
       </ul>
     </div>
     <div class="footer" role="contentinfo">
         &#169; Copyright 2017, Marco Caserta.
-      Last updated on Jun 01, 2017.
+      Last updated on Jun 05, 2017.
       Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
     </div>
   </body>

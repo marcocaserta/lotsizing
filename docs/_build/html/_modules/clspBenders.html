@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>clspBenders &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    <title>clspBenders &#8212; MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</title>
     
     <link rel="stylesheet" href="../_static/classic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -37,7 +37,7 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li>
           <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
     </div>  
@@ -2271,6 +2271,18 @@
 <span class="sd">    the separation mechanism to each of these solutions. To get the pool of</span>
 <span class="sd">    solution, it suffices to call :meth:`MIP.solve()` with the flag ``withPool=1``.</span>
 
+<span class="sd">    Here is a high-level description of the algorithm:</span>
+
+<span class="sd">    1. create master and worker</span>
+<span class="sd">    2. in-out cycle to quickly get a good lower bound</span>
+<span class="sd">    3. fixing schemes (optionals) to zero and one</span>
+<span class="sd">    4. add  corridor w.r.t. incumbent solution</span>
+<span class="sd">    5. solve current master and get master solution yHat</span>
+<span class="sd">    6. solve worker subproblem induced by yHat</span>
+<span class="sd">    7. add cut induced by subproblem solution to current master</span>
+<span class="sd">    8. if new incumbent is obtained, update bounds and corridor</span>
+<span class="sd">    9. if gap &lt; :math:`\epsilon`, STOP. Else, go to s5.</span>
+
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">globalProgr</span> <span class="o">=</span> <span class="mi">0</span>
@@ -2551,13 +2563,13 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li>
           <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li> 
       </ul>
     </div>
     <div class="footer" role="contentinfo">
         &#169; Copyright 2017, Marco Caserta.
-      Last updated on Jun 01, 2017.
+      Last updated on Jun 05, 2017.
       Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
     </div>
   </body>

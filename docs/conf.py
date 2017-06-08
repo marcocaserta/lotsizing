@@ -47,7 +47,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'MIMPLS Benders'
+project = u'MIMPLS Benders - Lagrange - Dantzig Wolfe'
 copyright = u'2017, Marco Caserta'
 
 # The version info for the project you're documenting, acts as replacement for

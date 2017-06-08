@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>dw2 &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    <title>dw2 &#8212; MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</title>
     
     <link rel="stylesheet" href="../_static/classic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -37,7 +37,7 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li>
           <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
     </div>  
@@ -52,7 +52,7 @@
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">===========================================================================</span>
 
-<span class="sd">:Filename: clspBenders.py</span>
+<span class="sd">:Filename: dw2.py</span>
 <span class="sd">:Author: marco caserta</span>
 <span class="sd">:Date: 09.03.2017</span>
 <span class="sd">:Last Update: |date|</span>
@@ -84,7 +84,7 @@
 
 <span class="sd">===========================================================================</span>
 
-<span class="sd">This code implements a Lagrangean relaxation scheme for the multi-item</span>
+<span class="sd">This code implements a Dantzig-Wolfe reformulation scheme for the multi-item</span>
 <span class="sd">multi-period capacitated lot sizing problem.</span>
 
 <span class="sd">&quot;&quot;&quot;</span>
@@ -107,6 +107,9 @@
 
 
 <div class="viewcode-block" id="DantzigWolfe"><a class="viewcode-back" href="../dw2.html#dw2.DantzigWolfe">[docs]</a><span class="k">class</span> <span class="nc">DantzigWolfe</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This class implements a Dantzig-Wolfe reformulation scheme for the CLSP.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">l_ilo</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">n_ilo</span> <span class="o">=</span> <span class="p">[]</span>
@@ -690,13 +693,13 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li>
           <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li> 
       </ul>
     </div>
     <div class="footer" role="contentinfo">
         &#169; Copyright 2017, Marco Caserta.
-      Last updated on Jun 01, 2017.
+      Last updated on Jun 05, 2017.
       Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
     </div>
   </body>

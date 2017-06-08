@@ -2,7 +2,7 @@
 """
 ===========================================================================
 
-:Filename: clspBenders.py
+:Filename: dw2.py
 :Author: marco caserta
 :Date: 09.03.2017
 :Last Update: |date|
@@ -34,7 +34,7 @@ Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)
 
 ===========================================================================
 
-This code implements a Lagrangean relaxation scheme for the multi-item
+This code implements a Dantzig-Wolfe reformulation scheme for the multi-item
 multi-period capacitated lot sizing problem.
 
 """
@@ -57,6 +57,9 @@ maxIter  = 40
 
 
 class DantzigWolfe:
+    """
+    This class implements a Dantzig-Wolfe reformulation scheme for the CLSP.
+    """
     def __init__(self, inp):
         self.l_ilo = []
         self.n_ilo = []

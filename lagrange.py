@@ -3,7 +3,7 @@
 """
 ===========================================================================
 
-:Filename: clspBenders.py
+:Filename: lagrange.py
 :Author: marco caserta
 :Date: 09.03.2017
 :Last Update: |date|
@@ -15,7 +15,7 @@ Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)
 
 (This document was generated on |date| at |time|.)
 
-.. this is just a comment
+.. this is just a comment (it won't appear in the documentation)
 
 ===========================================================================
 
@@ -54,6 +54,43 @@ maxIter = 500
 
 
 class Lagrange:
+    """
+    This class implements the Lagrangean scheme for the CLSP. We relax in a
+    Lagrangean fashion the capacity constraints. Therefore, the relaxed problem
+    can be separated over the items.
+
+    The same formulation used for the other techniques, i.e., Benders and
+    Dantzig-Wolfe, is used here: The Single Plant Location formulation.
+    
+    Initialization of the Lagrangean class. We define a cplex object, which
+    contains the **relaxed** problem, along with the decision variables
+    :math:`y_{jt}` and :math:`z_{jtr}`.
+
+    The formulation of the relaxed problem is given here (**note**: The problem
+    can now be separated over the items):
+
+    .. math::
+        :nowrap:
+
+        \\begin{eqnarray}
+          & \min L(\\textbf{u}) = &   \sum_{j=1}^n \sum_{t=1}^T f'_{jt}y_{jt} +
+          \sum_{j=1}^n \sum_{r=1}^T \sum_{t=1}^{r-1} h'_{jtr}z_{jtr} -\sum_{t=1}^T u_t
+          \label{eq:LR-obj}\\\\
+          &\mbox{s.t}&  \sum_{t=1}^r z_{jtr} = d_{jr},
+          \quad j = 1, \ldots, n , \quad r = 1, \dots, T
+          \label{eq:LR-demand-constr} \\\\
+          && z_{jtr} \leq d_{jr}y_{jt},
+          \quad j = 1, \ldots, n , \quad t = 1, \dots, T, \quad r=t,\dots,T
+          \label{eq:LR-logic-constr} \\\\
+          && \sum_{r=t}^T z_{jtr} \leq M y_{jt},
+          \quad j = 1, \ldots, n , \quad t = 1, \dots, T
+          \label{eq:LR-cumLogic-constr} \\\\
+          && y_{jt} \in \left\{0,1\\right\}, \quad j = 1, \ldots, n, \quad
+          t=1, \ldots, T \label{eq:LR-y-binary}\\\\
+          && z_{jtr} \geq 0, \quad j = 1, \ldots, n, \quad
+          t=1, \ldots, T, \quad r = t,\dots,T \label{eq:LR-z-cont}
+        \end{eqnarray}
+    """
     def __init__(self, inp, ub):
         z_ilo  = []
         y_ilo  = []
@@ -148,6 +185,12 @@ class Lagrange:
 
 
     def stoppingCriteria(self, maxIter, converged):
+        """
+        Stop when:
+
+        * a maximum number of iterations is reached, or
+        * the lagrangean bound is no longer improving (converged was reached)
+        """
         iterL = self.iterL
         if iterL > maxIter or converged:
             return True
@@ -156,6 +199,12 @@ class Lagrange:
             
 
     def multRandomPerturbation(self, inp):
+        """
+        We run three Lagrangean cycles. At the end of each cycle, we randomly
+        perturb the multipliers and restart. The idea is to introduce some
+        "shaking" into the multipliers, without starting completely from
+        scratch.
+        """
         lmult = self.lmult
 
         for t in range(inp.nP):
@@ -166,6 +215,32 @@ class Lagrange:
 
 
     def lagrangeanStep(self, inp):
+        """
+        Each Lagrangean step receives as input the current multipliers. Based
+        on the value of :math:`\\mathbf{u}`, i.e., ``lmult``, we recompute the
+        objective function coefficients as:
+
+        .. math ::
+            :nowrap:
+
+            \\begin{eqnarray}
+            f'_{jt} &=& f_{jt} + u_t m_{jt} \\\\
+            h'_{jrt} &=& h_{jtr} + u_t a_{jt}
+            \end{eqnarray}
+
+        Next, we solve the current Lagrangean problem. Note that the Lagrangean
+        problem obtained after relaxing the *capacity* constraints, could be
+        separated over the item and solved using efficient methods, e.g.,
+        Wagner-Within. 
+
+        We indicate with ``zL``, ``yL``, and ``zL`` the objective function of the
+        Lagrangean solution, the setup schedule, and the production plan,
+        respectively. 
+        
+        Note that each Lagrangean solution provides a lower bound. Therefore,
+        if the newly found value ``zL`` is better (higher) than the best known
+        lower bound so far, we update the lower bound.
+        """
         lmult  = self.lmult
         cpx    = self.cpx
         iterL  = self.iterL
@@ -223,6 +298,24 @@ class Lagrange:
         self.improvement = improvement
 
     def lmultUpdate(self, inp):
+        """
+        Update Lagrangean multipliers. We use a subgradient deflection
+        technique to update the value of the multipliers (see paper for
+        details). A subgradient is:
+
+        .. math::
+            :nowrap:
+
+              \\begin{equation}
+              s_t (\\textbf{u}) = \sum_{j=1}^n \left( a_{jt}\sum_{r=t}^T z_{jtr}^L +
+              m_{jt}y_{jt}^L\\right) - b_t,  \quad t = 1, \ldots, T
+              \end{equation}
+
+        where the subgradient :math:`s_t (\\textbf{u})` is a function of
+        :math:`\\textbf{u}` via both :math:`\mathbf{y}^L` and
+        :math:`\mathbf{z}^L`.
+
+        """
         delta    = self.delta
         zL       = self.zL
         yL       = self.yL
@@ -273,6 +366,21 @@ class Lagrange:
 
 
     def refineMIPSolution(self, inp, mip, cPercent):
+        """
+        Primal scheme based on the corridor method and the Lagrangean
+        relaxation. The original MIP formulation is provided as input here
+        (object ``mip``). We then build a corridor around the incumbent
+        Lagrangean solution ``yL`` obtained within
+        :meth:`lagrangeanStep()`. Once the corridor constraint is
+        added to the original formulation, we solve the constrained CLSP.
+
+        A solution found by this primal scheme provides a valid *upper bound*
+        to the optimal solution. Therefore, if a new best value is found, we
+        update the bound. 
+
+        **Note**: The corridor constraint is removed at the end of the primal
+        scheme, to avoid *overconstraining* the original formulation.
+        """
         ubStar = self.ubStar
         yL    = self.yL
         y_ilo = mip.y_ilo
@@ -303,6 +411,13 @@ class Lagrange:
         self.ubStar = ubStar
 
     def FixVarsLP(self, mip, fixToZero, fixToOne, cZero, cOne):
+        """
+        Fixing scheme. Some variables are soft-fixed to 0 or 1, based on the LP
+        scheme described in :meth:`clspBenders.MIP.solveLPZero()`. The two vectors
+        ``fixToOne`` and ``fixToZero`` are obtained solving twice the LP
+        relaxation of the original problem, with the goal of finding a subset
+        of variables whose values can "safely" be set to 0 or 1.
+        """
         cpx = mip.cpx
         y_ilo = mip.y_ilo
 
@@ -323,6 +438,11 @@ class Lagrange:
                                    senses   = ["G"],
                                    rhs      = [rhsVal])
     def checkConvergence(self):
+        """
+        One of the two stopping criteria. If the improvement in the lower bound
+        in the last 50 iterations is below a certain value, we assume the
+        Lagrangean phase has converged and, therefore, we stop (or restart).
+        """
         if (self.lb50 - self.lbInit)/self.lbInit < 0.0001:
             return True
         else:
@@ -333,6 +453,20 @@ class Lagrange:
 
     def lagrangeanPhase(self, inp, mip, fixToZero, fixToOne, cPercent, cZero,
     cOne):
+        """
+        We employ a primal-dual scheme, in which the Lagrangean relaxation
+        provides a sequence of (non-monotonically) increasing lower bound,
+        while a corridor-based primal scheme gives upper bounds. The basic
+        steps of the algorithm are as folllows:
+
+        1. soft-fix some of the variables to 0 or 1 (LP-based scheme)
+        2. initialize Lagrangean multipliers
+        3. perform one Lagrangean step, i.e., solve the relaxed problems for the given set of multipliers :math:`\\rightarrow` we obtain a Lagrangean lower bound ``zL`` and a solution ``yL``
+        4. update Lagrangean multipliers (subgradient optimization)
+        5. periodically, apply primal scheme (add corridor around ``yL`` and solve constrained CLSP)
+        6. if stoppingCriteria are reached, either restart or stop (the outer cycle is repeated three times, after which the algorithm stops.)
+
+        """
 
         #  soft-fix some variables to 0 or 1
         self.FixVarsLP(mip, fixToZero, fixToOne, cZero, cOne)

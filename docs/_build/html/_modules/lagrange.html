@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>lagrange &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    <title>lagrange &#8212; MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</title>
     
     <link rel="stylesheet" href="../_static/classic.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
@@ -37,7 +37,7 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li>
           <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
     </div>  
@@ -53,7 +53,7 @@
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">===========================================================================</span>
 
-<span class="sd">:Filename: clspBenders.py</span>
+<span class="sd">:Filename: lagrange.py</span>
 <span class="sd">:Author: marco caserta</span>
 <span class="sd">:Date: 09.03.2017</span>
 <span class="sd">:Last Update: |date|</span>
@@ -65,7 +65,7 @@
 
 <span class="sd">(This document was generated on |date| at |time|.)</span>
 
-<span class="sd">.. this is just a comment</span>
+<span class="sd">.. this is just a comment (it won&#39;t appear in the documentation)</span>
 
 <span class="sd">===========================================================================</span>
 
@@ -104,6 +104,43 @@
 
 
 <div class="viewcode-block" id="Lagrange"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange">[docs]</a><span class="k">class</span> <span class="nc">Lagrange</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This class implements the Lagrangean scheme for the CLSP. We relax in a</span>
+<span class="sd">    Lagrangean fashion the capacity constraints. Therefore, the relaxed problem</span>
+<span class="sd">    can be separated over the items.</span>
+
+<span class="sd">    The same formulation used for the other techniques, i.e., Benders and</span>
+<span class="sd">    Dantzig-Wolfe, is used here: The Single Plant Location formulation.</span>
+<span class="sd">    </span>
+<span class="sd">    Initialization of the Lagrangean class. We define a cplex object, which</span>
+<span class="sd">    contains the **relaxed** problem, along with the decision variables</span>
+<span class="sd">    :math:`y_{jt}` and :math:`z_{jtr}`.</span>
+
+<span class="sd">    The formulation of the relaxed problem is given here (**note**: The problem</span>
+<span class="sd">    can now be separated over the items):</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        :nowrap:</span>
+
+<span class="sd">        \\begin{eqnarray}</span>
+<span class="sd">          &amp; \min L(\\textbf{u}) = &amp;   \sum_{j=1}^n \sum_{t=1}^T f&#39;_{jt}y_{jt} +</span>
+<span class="sd">          \sum_{j=1}^n \sum_{r=1}^T \sum_{t=1}^{r-1} h&#39;_{jtr}z_{jtr} -\sum_{t=1}^T u_t</span>
+<span class="sd">          \label{eq:LR-obj}\\\\</span>
+<span class="sd">          &amp;\mbox{s.t}&amp;  \sum_{t=1}^r z_{jtr} = d_{jr},</span>
+<span class="sd">          \quad j = 1, \ldots, n , \quad r = 1, \dots, T</span>
+<span class="sd">          \label{eq:LR-demand-constr} \\\\</span>
+<span class="sd">          &amp;&amp; z_{jtr} \leq d_{jr}y_{jt},</span>
+<span class="sd">          \quad j = 1, \ldots, n , \quad t = 1, \dots, T, \quad r=t,\dots,T</span>
+<span class="sd">          \label{eq:LR-logic-constr} \\\\</span>
+<span class="sd">          &amp;&amp; \sum_{r=t}^T z_{jtr} \leq M y_{jt},</span>
+<span class="sd">          \quad j = 1, \ldots, n , \quad t = 1, \dots, T</span>
+<span class="sd">          \label{eq:LR-cumLogic-constr} \\\\</span>
+<span class="sd">          &amp;&amp; y_{jt} \in \left\{0,1\\right\}, \quad j = 1, \ldots, n, \quad</span>
+<span class="sd">          t=1, \ldots, T \label{eq:LR-y-binary}\\\\</span>
+<span class="sd">          &amp;&amp; z_{jtr} \geq 0, \quad j = 1, \ldots, n, \quad</span>
+<span class="sd">          t=1, \ldots, T, \quad r = t,\dots,T \label{eq:LR-z-cont}</span>
+<span class="sd">        \end{eqnarray}</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">ub</span><span class="p">):</span>
         <span class="n">z_ilo</span>  <span class="o">=</span> <span class="p">[]</span>
         <span class="n">y_ilo</span>  <span class="o">=</span> <span class="p">[]</span>
@@ -198,6 +235,12 @@
 
 
 <div class="viewcode-block" id="Lagrange.stoppingCriteria"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.stoppingCriteria">[docs]</a>    <span class="k">def</span> <span class="nf">stoppingCriteria</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">maxIter</span><span class="p">,</span> <span class="n">converged</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Stop when:</span>
+
+<span class="sd">        * a maximum number of iterations is reached, or</span>
+<span class="sd">        * the lagrangean bound is no longer improving (converged was reached)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">iterL</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterL</span>
         <span class="k">if</span> <span class="n">iterL</span> <span class="o">&gt;</span> <span class="n">maxIter</span> <span class="ow">or</span> <span class="n">converged</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">True</span>
@@ -206,6 +249,12 @@
             
 
 <div class="viewcode-block" id="Lagrange.multRandomPerturbation"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.multRandomPerturbation">[docs]</a>    <span class="k">def</span> <span class="nf">multRandomPerturbation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        We run three Lagrangean cycles. At the end of each cycle, we randomly</span>
+<span class="sd">        perturb the multipliers and restart. The idea is to introduce some</span>
+<span class="sd">        &quot;shaking&quot; into the multipliers, without starting completely from</span>
+<span class="sd">        scratch.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">lmult</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lmult</span>
 
         <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">nP</span><span class="p">):</span>
@@ -216,6 +265,32 @@
 
 
 <div class="viewcode-block" id="Lagrange.lagrangeanStep"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.lagrangeanStep">[docs]</a>    <span class="k">def</span> <span class="nf">lagrangeanStep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Each Lagrangean step receives as input the current multipliers. Based</span>
+<span class="sd">        on the value of :math:`\\mathbf{u}`, i.e., ``lmult``, we recompute the</span>
+<span class="sd">        objective function coefficients as:</span>
+
+<span class="sd">        .. math ::</span>
+<span class="sd">            :nowrap:</span>
+
+<span class="sd">            \\begin{eqnarray}</span>
+<span class="sd">            f&#39;_{jt} &amp;=&amp; f_{jt} + u_t m_{jt} \\\\</span>
+<span class="sd">            h&#39;_{jrt} &amp;=&amp; h_{jtr} + u_t a_{jt}</span>
+<span class="sd">            \end{eqnarray}</span>
+
+<span class="sd">        Next, we solve the current Lagrangean problem. Note that the Lagrangean</span>
+<span class="sd">        problem obtained after relaxing the *capacity* constraints, could be</span>
+<span class="sd">        separated over the item and solved using efficient methods, e.g.,</span>
+<span class="sd">        Wagner-Within. </span>
+
+<span class="sd">        We indicate with ``zL``, ``yL``, and ``zL`` the objective function of the</span>
+<span class="sd">        Lagrangean solution, the setup schedule, and the production plan,</span>
+<span class="sd">        respectively. </span>
+<span class="sd">        </span>
+<span class="sd">        Note that each Lagrangean solution provides a lower bound. Therefore,</span>
+<span class="sd">        if the newly found value ``zL`` is better (higher) than the best known</span>
+<span class="sd">        lower bound so far, we update the lower bound.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">lmult</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lmult</span>
         <span class="n">cpx</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cpx</span>
         <span class="n">iterL</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterL</span>
@@ -273,6 +348,24 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">improvement</span> <span class="o">=</span> <span class="n">improvement</span></div>
 
 <div class="viewcode-block" id="Lagrange.lmultUpdate"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.lmultUpdate">[docs]</a>    <span class="k">def</span> <span class="nf">lmultUpdate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update Lagrangean multipliers. We use a subgradient deflection</span>
+<span class="sd">        technique to update the value of the multipliers (see paper for</span>
+<span class="sd">        details). A subgradient is:</span>
+
+<span class="sd">        .. math::</span>
+<span class="sd">            :nowrap:</span>
+
+<span class="sd">              \\begin{equation}</span>
+<span class="sd">              s_t (\\textbf{u}) = \sum_{j=1}^n \left( a_{jt}\sum_{r=t}^T z_{jtr}^L +</span>
+<span class="sd">              m_{jt}y_{jt}^L\\right) - b_t,  \quad t = 1, \ldots, T</span>
+<span class="sd">              \end{equation}</span>
+
+<span class="sd">        where the subgradient :math:`s_t (\\textbf{u})` is a function of</span>
+<span class="sd">        :math:`\\textbf{u}` via both :math:`\mathbf{y}^L` and</span>
+<span class="sd">        :math:`\mathbf{z}^L`.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">delta</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">delta</span>
         <span class="n">zL</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">zL</span>
         <span class="n">yL</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yL</span>
@@ -323,6 +416,21 @@
 
 
 <div class="viewcode-block" id="Lagrange.refineMIPSolution"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.refineMIPSolution">[docs]</a>    <span class="k">def</span> <span class="nf">refineMIPSolution</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">mip</span><span class="p">,</span> <span class="n">cPercent</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Primal scheme based on the corridor method and the Lagrangean</span>
+<span class="sd">        relaxation. The original MIP formulation is provided as input here</span>
+<span class="sd">        (object ``mip``). We then build a corridor around the incumbent</span>
+<span class="sd">        Lagrangean solution ``yL`` obtained within</span>
+<span class="sd">        :meth:`lagrangeanStep()`. Once the corridor constraint is</span>
+<span class="sd">        added to the original formulation, we solve the constrained CLSP.</span>
+
+<span class="sd">        A solution found by this primal scheme provides a valid *upper bound*</span>
+<span class="sd">        to the optimal solution. Therefore, if a new best value is found, we</span>
+<span class="sd">        update the bound. </span>
+
+<span class="sd">        **Note**: The corridor constraint is removed at the end of the primal</span>
+<span class="sd">        scheme, to avoid *overconstraining* the original formulation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">ubStar</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ubStar</span>
         <span class="n">yL</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yL</span>
         <span class="n">y_ilo</span> <span class="o">=</span> <span class="n">mip</span><span class="o">.</span><span class="n">y_ilo</span>
@@ -353,6 +461,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">ubStar</span> <span class="o">=</span> <span class="n">ubStar</span></div>
 
 <div class="viewcode-block" id="Lagrange.FixVarsLP"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.FixVarsLP">[docs]</a>    <span class="k">def</span> <span class="nf">FixVarsLP</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mip</span><span class="p">,</span> <span class="n">fixToZero</span><span class="p">,</span> <span class="n">fixToOne</span><span class="p">,</span> <span class="n">cZero</span><span class="p">,</span> <span class="n">cOne</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fixing scheme. Some variables are soft-fixed to 0 or 1, based on the LP</span>
+<span class="sd">        scheme described in :meth:`clspBenders.MIP.solveLPZero()`. The two vectors</span>
+<span class="sd">        ``fixToOne`` and ``fixToZero`` are obtained solving twice the LP</span>
+<span class="sd">        relaxation of the original problem, with the goal of finding a subset</span>
+<span class="sd">        of variables whose values can &quot;safely&quot; be set to 0 or 1.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">cpx</span> <span class="o">=</span> <span class="n">mip</span><span class="o">.</span><span class="n">cpx</span>
         <span class="n">y_ilo</span> <span class="o">=</span> <span class="n">mip</span><span class="o">.</span><span class="n">y_ilo</span>
 
@@ -373,6 +488,11 @@
                                    <span class="n">senses</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;G&quot;</span><span class="p">],</span>
                                    <span class="n">rhs</span>      <span class="o">=</span> <span class="p">[</span><span class="n">rhsVal</span><span class="p">])</span></div>
 <div class="viewcode-block" id="Lagrange.checkConvergence"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.checkConvergence">[docs]</a>    <span class="k">def</span> <span class="nf">checkConvergence</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        One of the two stopping criteria. If the improvement in the lower bound</span>
+<span class="sd">        in the last 50 iterations is below a certain value, we assume the</span>
+<span class="sd">        Lagrangean phase has converged and, therefore, we stop (or restart).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lb50</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">lbInit</span><span class="p">)</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">lbInit</span> <span class="o">&lt;</span> <span class="mf">0.0001</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">True</span>
         <span class="k">else</span><span class="p">:</span>
@@ -383,6 +503,20 @@
 
 <div class="viewcode-block" id="Lagrange.lagrangeanPhase"><a class="viewcode-back" href="../lagrange.html#lagrange.Lagrange.lagrangeanPhase">[docs]</a>    <span class="k">def</span> <span class="nf">lagrangeanPhase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">mip</span><span class="p">,</span> <span class="n">fixToZero</span><span class="p">,</span> <span class="n">fixToOne</span><span class="p">,</span> <span class="n">cPercent</span><span class="p">,</span> <span class="n">cZero</span><span class="p">,</span>
     <span class="n">cOne</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        We employ a primal-dual scheme, in which the Lagrangean relaxation</span>
+<span class="sd">        provides a sequence of (non-monotonically) increasing lower bound,</span>
+<span class="sd">        while a corridor-based primal scheme gives upper bounds. The basic</span>
+<span class="sd">        steps of the algorithm are as folllows:</span>
+
+<span class="sd">        1. soft-fix some of the variables to 0 or 1 (LP-based scheme)</span>
+<span class="sd">        2. initialize Lagrangean multipliers</span>
+<span class="sd">        3. perform one Lagrangean step, i.e., solve the relaxed problems for the given set of multipliers :math:`\\rightarrow` we obtain a Lagrangean lower bound ``zL`` and a solution ``yL``</span>
+<span class="sd">        4. update Lagrangean multipliers (subgradient optimization)</span>
+<span class="sd">        5. periodically, apply primal scheme (add corridor around ``yL`` and solve constrained CLSP)</span>
+<span class="sd">        6. if stoppingCriteria are reached, either restart or stop (the outer cycle is repeated three times, after which the algorithm stops.)</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="c1">#  soft-fix some variables to 0 or 1</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">FixVarsLP</span><span class="p">(</span><span class="n">mip</span><span class="p">,</span> <span class="n">fixToZero</span><span class="p">,</span> <span class="n">fixToOne</span><span class="p">,</span> <span class="n">cZero</span><span class="p">,</span> <span class="n">cOne</span><span class="p">)</span>
@@ -462,13 +596,13 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li>
           <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li> 
       </ul>
     </div>
     <div class="footer" role="contentinfo">
         &#169; Copyright 2017, Marco Caserta.
-      Last updated on Jun 01, 2017.
+      Last updated on Jun 05, 2017.
       Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
     </div>
   </body>

@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>clspBenders module &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    <title>clspBenders module &#8212; MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</title>
     
     <link rel="stylesheet" href="_static/classic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -45,7 +45,7 @@
         <li class="right" >
           <a href="index.html" title="Welcome to MIMPLS Benders documentation!"
              accesskey="P">previous</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li> 
       </ul>
     </div>  
 
@@ -67,12 +67,12 @@
 </tr>
 <tr class="field-odd field"><th class="field-name">Date:</th><td class="field-body">09.03.2017</td>
 </tr>
-<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">01.06.17</td>
+<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">05.06.17</td>
 </tr>
 </tbody>
 </table>
 <p>Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)</p>
-<p>(This document was generated on 01.06.17 at 12:54.)</p>
+<p>(This document was generated on 05.06.17 at 13:32.)</p>
 <hr class="docutils" />
 <blockquote>
 <div><p>This program is free software; you can redistribute it and/or modify it
@@ -520,6 +520,18 @@ to the separation scheme. Alternative approaches have been explored, e.g.,
 producing feasible solutions using a Cross Entropy scheme and, then, apply
 the separation mechanism to each of these solutions. To get the pool of
 solution, it suffices to call <a class="reference internal" href="#clspBenders.MIP.solve" title="clspBenders.MIP.solve"><code class="xref py py-meth docutils literal"><span class="pre">MIP.solve()</span></code></a> with the flag <code class="docutils literal"><span class="pre">withPool=1</span></code>.</p>
+<p>Here is a high-level description of the algorithm:</p>
+<ol class="arabic simple">
+<li>create master and worker</li>
+<li>in-out cycle to quickly get a good lower bound</li>
+<li>fixing schemes (optionals) to zero and one</li>
+<li>add  corridor w.r.t. incumbent solution</li>
+<li>solve current master and get master solution yHat</li>
+<li>solve worker subproblem induced by yHat</li>
+<li>add cut induced by subproblem solution to current master</li>
+<li>if new incumbent is obtained, update bounds and corridor</li>
+<li>if gap &lt; <img class="math" src="_images/math/19bc0073dde1bcd1a8e6a32b251e80cced668f04.png" alt="\epsilon"/>, STOP. Else, go to s5.</li>
+</ol>
 </dd></dl>
 
 <dl class="function">
@@ -699,12 +711,12 @@ code.</p>
         <li class="right" >
           <a href="index.html" title="Welcome to MIMPLS Benders documentation!"
              >previous</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li> 
       </ul>
     </div>
     <div class="footer" role="contentinfo">
         &#169; Copyright 2017, Marco Caserta.
-      Last updated on Jun 01, 2017.
+      Last updated on Jun 05, 2017.
       Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
     </div>
   </body>

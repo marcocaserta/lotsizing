@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>lagrange module &#8212; MIMPLS Benders 1.0.0 documentation</title>
+    <title>lagrange module &#8212; MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</title>
     
     <link rel="stylesheet" href="_static/classic.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
@@ -25,7 +25,9 @@
     <script type="text/javascript" src="_static/underscore.js"></script>
     <script type="text/javascript" src="_static/doctools.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" /> 
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="conf module" href="conf.html" />
+    <link rel="prev" title="dw2 module" href="dw2.html" /> 
   </head>
   <body role="document">
     <div class="related" role="navigation" aria-label="related navigation">
@@ -37,7 +39,13 @@
         <li class="right" >
           <a href="py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+        <li class="right" >
+          <a href="conf.html" title="conf module"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="dw2.html" title="dw2 module"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li> 
       </ul>
     </div>  
 
@@ -53,18 +61,18 @@
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
-<tr class="field-odd field"><th class="field-name">Filename:</th><td class="field-body">clspBenders.py</td>
+<tr class="field-odd field"><th class="field-name">Filename:</th><td class="field-body">lagrange.py</td>
 </tr>
 <tr class="field-even field"><th class="field-name">Author:</th><td class="field-body">marco caserta</td>
 </tr>
 <tr class="field-odd field"><th class="field-name">Date:</th><td class="field-body">09.03.2017</td>
 </tr>
-<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">01.06.17</td>
+<tr class="field-even field"><th class="field-name">Last Update:</th><td class="field-body">05.06.17</td>
 </tr>
 </tbody>
 </table>
 <p>Copyright (C) 2017 by Marco Caserta  (marco dot caserta at ie dot edu)</p>
-<p>(This document was generated on 01.06.17 at 09:19.)</p>
+<p>(This document was generated on 05.06.17 at 13:32.)</p>
 <hr class="docutils" />
 <blockquote>
 <div><p>This program is free software; you can redistribute it and/or modify it
@@ -86,45 +94,143 @@ multi-period capacitated lot sizing problem.</p>
 <dt id="lagrange.Lagrange">
 <em class="property">class </em><code class="descclassname">lagrange.</code><code class="descname">Lagrange</code><span class="sig-paren">(</span><em>inp</em>, <em>ub</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal"><span class="pre">object</span></code></p>
-<dl class="method">
+<p>This class implements the Lagrangean scheme for the CLSP. We relax in a
+Lagrangean fashion the capacity constraints. Therefore, the relaxed problem
+can be separated over the items.</p>
+<p>The same formulation used for the other techniques, i.e., Benders and
+Dantzig-Wolfe, is used here: The Single Plant Location formulation.</p>
+<p>Initialization of the Lagrangean class. We define a cplex object, which
+contains the <strong>relaxed</strong> problem, along with the decision variables
+<img class="math" src="_images/math/7e65b69d8d4a3093c7896dd1ab16b1966fcde877.png" alt="y_{jt}"/> and <img class="math" src="_images/math/08cd8a31fe62980f63605653aa1d76cbd6b00520.png" alt="z_{jtr}"/>.</p>
+<p>The formulation of the relaxed problem is given here (<strong>note</strong>: The problem
+can now be separated over the items):</p>
+<div class="math">
+<p><img src="_images/math/6076092a35ad75aab2dbcf910b8b1cad78aefeda.png" alt="\begin{eqnarray}
+  &amp; \min L(\textbf{u}) = &amp;   \sum_{j=1}^n \sum_{t=1}^T f'_{jt}y_{jt} +
+  \sum_{j=1}^n \sum_{r=1}^T \sum_{t=1}^{r-1} h'_{jtr}z_{jtr} -\sum_{t=1}^T u_t
+  \label{eq:LR-obj}\\
+  &amp;\mbox{s.t}&amp;  \sum_{t=1}^r z_{jtr} = d_{jr},
+  \quad j = 1, \ldots, n , \quad r = 1, \dots, T
+  \label{eq:LR-demand-constr} \\
+  &amp;&amp; z_{jtr} \leq d_{jr}y_{jt},
+  \quad j = 1, \ldots, n , \quad t = 1, \dots, T, \quad r=t,\dots,T
+  \label{eq:LR-logic-constr} \\
+  &amp;&amp; \sum_{r=t}^T z_{jtr} \leq M y_{jt},
+  \quad j = 1, \ldots, n , \quad t = 1, \dots, T
+  \label{eq:LR-cumLogic-constr} \\
+  &amp;&amp; y_{jt} \in \left\{0,1\right\}, \quad j = 1, \ldots, n, \quad
+  t=1, \ldots, T \label{eq:LR-y-binary}\\
+  &amp;&amp; z_{jtr} \geq 0, \quad j = 1, \ldots, n, \quad
+  t=1, \ldots, T, \quad r = t,\dots,T \label{eq:LR-z-cont}
+\end{eqnarray}"/></p>
+</div><dl class="method">
 <dt id="lagrange.Lagrange.FixVarsLP">
 <code class="descname">FixVarsLP</code><span class="sig-paren">(</span><em>mip</em>, <em>fixToZero</em>, <em>fixToOne</em>, <em>cZero</em>, <em>cOne</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.FixVarsLP"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.FixVarsLP" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>Fixing scheme. Some variables are soft-fixed to 0 or 1, based on the LP
+scheme described in <a class="reference internal" href="clspBenders.html#clspBenders.MIP.solveLPZero" title="clspBenders.MIP.solveLPZero"><code class="xref py py-meth docutils literal"><span class="pre">clspBenders.MIP.solveLPZero()</span></code></a>. The two vectors
+<code class="docutils literal"><span class="pre">fixToOne</span></code> and <code class="docutils literal"><span class="pre">fixToZero</span></code> are obtained solving twice the LP
+relaxation of the original problem, with the goal of finding a subset
+of variables whose values can &#8220;safely&#8221; be set to 0 or 1.</p>
+</dd></dl>
 
 <dl class="method">
 <dt id="lagrange.Lagrange.checkConvergence">
 <code class="descname">checkConvergence</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.checkConvergence"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.checkConvergence" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>One of the two stopping criteria. If the improvement in the lower bound
+in the last 50 iterations is below a certain value, we assume the
+Lagrangean phase has converged and, therefore, we stop (or restart).</p>
+</dd></dl>
 
 <dl class="method">
 <dt id="lagrange.Lagrange.lagrangeanPhase">
 <code class="descname">lagrangeanPhase</code><span class="sig-paren">(</span><em>inp</em>, <em>mip</em>, <em>fixToZero</em>, <em>fixToOne</em>, <em>cPercent</em>, <em>cZero</em>, <em>cOne</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.lagrangeanPhase"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.lagrangeanPhase" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>We employ a primal-dual scheme, in which the Lagrangean relaxation
+provides a sequence of (non-monotonically) increasing lower bound,
+while a corridor-based primal scheme gives upper bounds. The basic
+steps of the algorithm are as folllows:</p>
+<ol class="arabic simple">
+<li>soft-fix some of the variables to 0 or 1 (LP-based scheme)</li>
+<li>initialize Lagrangean multipliers</li>
+<li>perform one Lagrangean step, i.e., solve the relaxed problems for the given set of multipliers <img class="math" src="_images/math/a9c4c6156d25f42923975ce449aadad9848ed7dc.png" alt="\rightarrow"/> we obtain a Lagrangean lower bound <code class="docutils literal"><span class="pre">zL</span></code> and a solution <code class="docutils literal"><span class="pre">yL</span></code></li>
+<li>update Lagrangean multipliers (subgradient optimization)</li>
+<li>periodically, apply primal scheme (add corridor around <code class="docutils literal"><span class="pre">yL</span></code> and solve constrained CLSP)</li>
+<li>if stoppingCriteria are reached, either restart or stop (the outer cycle is repeated three times, after which the algorithm stops.)</li>
+</ol>
+</dd></dl>
 
 <dl class="method">
 <dt id="lagrange.Lagrange.lagrangeanStep">
 <code class="descname">lagrangeanStep</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.lagrangeanStep"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.lagrangeanStep" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>Each Lagrangean step receives as input the current multipliers. Based
+on the value of <img class="math" src="_images/math/a91ae60f68d93eaa007f50348d29e0d3137084fa.png" alt="\mathbf{u}"/>, i.e., <code class="docutils literal"><span class="pre">lmult</span></code>, we recompute the
+objective function coefficients as:</p>
+<div class="math">
+<p><img src="_images/math/33b5ebc8582c2709d17b20437952fe2061ad2a77.png" alt="\begin{eqnarray}
+f'_{jt} &amp;=&amp; f_{jt} + u_t m_{jt} \\
+h'_{jrt} &amp;=&amp; h_{jtr} + u_t a_{jt}
+\end{eqnarray}"/></p>
+</div><p>Next, we solve the current Lagrangean problem. Note that the Lagrangean
+problem obtained after relaxing the <em>capacity</em> constraints, could be
+separated over the item and solved using efficient methods, e.g.,
+Wagner-Within.</p>
+<p>We indicate with <code class="docutils literal"><span class="pre">zL</span></code>, <code class="docutils literal"><span class="pre">yL</span></code>, and <code class="docutils literal"><span class="pre">zL</span></code> the objective function of the
+Lagrangean solution, the setup schedule, and the production plan,
+respectively.</p>
+<p>Note that each Lagrangean solution provides a lower bound. Therefore,
+if the newly found value <code class="docutils literal"><span class="pre">zL</span></code> is better (higher) than the best known
+lower bound so far, we update the lower bound.</p>
+</dd></dl>
 
 <dl class="method">
 <dt id="lagrange.Lagrange.lmultUpdate">
 <code class="descname">lmultUpdate</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.lmultUpdate"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.lmultUpdate" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>Update Lagrangean multipliers. We use a subgradient deflection
+technique to update the value of the multipliers (see paper for
+details). A subgradient is:</p>
+<div class="math">
+<p><img src="_images/math/2484f4f880a196ec6fa29f9050c4fc06566784d2.png" alt="\begin{equation}
+  s_t (\textbf{u}) = \sum_{j=1}^n \left( a_{jt}\sum_{r=t}^T z_{jtr}^L +
+  m_{jt}y_{jt}^L\right) - b_t,  \quad t = 1, \ldots, T
+  \end{equation}"/></p>
+</div><p>where the subgradient <img class="math" src="_images/math/f5a4ae5ca746959137b81a4bcbfa0dd78a543e20.png" alt="s_t (\textbf{u})"/> is a function of
+<img class="math" src="_images/math/caeef85f3c2773da3e80e7198c14ed5b10fc9ee7.png" alt="\textbf{u}"/> via both <img class="math" src="_images/math/f90f061fde22887af5e765d7f95ee19092e80940.png" alt="\mathbf{y}^L"/> and
+<img class="math" src="_images/math/76ce7a614ea629e6fbdacaa7ed18ef1151190cfc.png" alt="\mathbf{z}^L"/>.</p>
+</dd></dl>
 
 <dl class="method">
 <dt id="lagrange.Lagrange.multRandomPerturbation">
 <code class="descname">multRandomPerturbation</code><span class="sig-paren">(</span><em>inp</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.multRandomPerturbation"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.multRandomPerturbation" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>We run three Lagrangean cycles. At the end of each cycle, we randomly
+perturb the multipliers and restart. The idea is to introduce some
+&#8220;shaking&#8221; into the multipliers, without starting completely from
+scratch.</p>
+</dd></dl>
 
 <dl class="method">
 <dt id="lagrange.Lagrange.refineMIPSolution">
 <code class="descname">refineMIPSolution</code><span class="sig-paren">(</span><em>inp</em>, <em>mip</em>, <em>cPercent</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.refineMIPSolution"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.refineMIPSolution" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>Primal scheme based on the corridor method and the Lagrangean
+relaxation. The original MIP formulation is provided as input here
+(object <code class="docutils literal"><span class="pre">mip</span></code>). We then build a corridor around the incumbent
+Lagrangean solution <code class="docutils literal"><span class="pre">yL</span></code> obtained within
+<a class="reference internal" href="#lagrange.Lagrange.lagrangeanStep" title="lagrange.Lagrange.lagrangeanStep"><code class="xref py py-meth docutils literal"><span class="pre">lagrangeanStep()</span></code></a>. Once the corridor constraint is
+added to the original formulation, we solve the constrained CLSP.</p>
+<p>A solution found by this primal scheme provides a valid <em>upper bound</em>
+to the optimal solution. Therefore, if a new best value is found, we
+update the bound.</p>
+<p><strong>Note</strong>: The corridor constraint is removed at the end of the primal
+scheme, to avoid <em>overconstraining</em> the original formulation.</p>
+</dd></dl>
 
 <dl class="method">
 <dt id="lagrange.Lagrange.stoppingCriteria">
 <code class="descname">stoppingCriteria</code><span class="sig-paren">(</span><em>maxIter</em>, <em>converged</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/lagrange.html#Lagrange.stoppingCriteria"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#lagrange.Lagrange.stoppingCriteria" title="Permalink to this definition">¶</a></dt>
-<dd></dd></dl>
+<dd><p>Stop when:</p>
+<ul class="simple">
+<li>a maximum number of iterations is reached, or</li>
+<li>the lagrangean bound is no longer improving (converged was reached)</li>
+</ul>
+</dd></dl>
 
 </dd></dl>
 
@@ -136,6 +242,12 @@ multi-period capacitated lot sizing problem.</p>
       </div>
       <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
         <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="dw2.html"
+                        title="previous chapter">dw2 module</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="conf.html"
+                        title="next chapter">conf module</a></p>
   <div role="note" aria-label="source link">
     <h3>This Page</h3>
     <ul class="this-page-menu">
@@ -166,12 +278,18 @@ multi-period capacitated lot sizing problem.</p>
         <li class="right" >
           <a href="py-modindex.html" title="Python Module Index"
              >modules</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders 1.0.0 documentation</a> &#187;</li> 
+        <li class="right" >
+          <a href="conf.html" title="conf module"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="dw2.html" title="dw2 module"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">MIMPLS Benders - Lagrange - Dantzig Wolfe 1.0.0 documentation</a> &#187;</li> 
       </ul>
     </div>
     <div class="footer" role="contentinfo">
         &#169; Copyright 2017, Marco Caserta.
-      Last updated on Jun 01, 2017.
+      Last updated on Jun 05, 2017.
       Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
     </div>
   </body>

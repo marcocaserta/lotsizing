@@ -269,13 +269,20 @@ from lagrange import *
 from dw2 import *
 #  from dw import *
 
+lbSummary = "lowerBounds.txt"
+
+#  lbFile = open(lbSummary, "a")
 
 _INFTY    = sys.float_info.max
 _EPSI     = sys.float_info.epsilon
 inputfile = ""
 userCuts  = "0"
 cPercent  = 0.0
+cZero     = 1.0 #  soft-fixing to zero is inactive
+cOne      = 0.0 #  soft-fixing to one is inactive
 algo      = -1
+fixToZero = []
+fixToOne  = []
 
 #  we set the master variables as global, while the subproblem vars are local
 z_ilo     = -1
@@ -1847,22 +1854,22 @@ def createMaster(inp, cpx):
                       types = ["C"],
                       names = ["zHat"])
 
-    for j in range(inp.nI):
-        if inp.d[j][0] > 0.0:
-            cpx.variables.set_lower_bounds(y_ilo[j][0], 1)
-            #  for t in range(inp.nP-1):
-            for t in range(1):
-                #  hop constraint
-                tp = findNext(j,t, inp)
-                print("... For item ",j," we go from ",t," to ",tp)
-                #  input("...aka")
-                if tp < inp.nP:
-                    index = [y_ilo[j][t] for t in range(t+1,tp+1)]
-                    value = [1.0]*len(range(t,tp))
-                    hop_constraint = cplex.SparsePair(ind=index,val=value)
-                    cpx.linear_constraints.add(lin_expr = [hop_constraint],
-                                               senses   = ["G"],
-                                               rhs      = [1])
+    #  for j in range(inp.nI):
+    #      if inp.d[j][0] > 0.0:
+    #          cpx.variables.set_lower_bounds(y_ilo[j][0], 1)
+    #          #  for t in range(inp.nP-1):
+    #          for t in range(1):
+    #              #  hop constraint
+    #              tp = findNext(j,t, inp)
+    #              print("... For item ",j," we go from ",t," to ",tp)
+    #              #  input("...aka")
+    #              if tp < inp.nP:
+    #                  index = [y_ilo[j][t] for t in range(t+1,tp+1)]
+    #                  value = [1.0]*len(range(t,tp))
+    #                  hop_constraint = cplex.SparsePair(ind=index,val=value)
+    #                  cpx.linear_constraints.add(lin_expr = [hop_constraint],
+    #                                             senses   = ["G"],
+    #                                             rhs      = [1])
 
     for j in range(inp.nI):
         index = [y_ilo[j][t] for t in range(inp.nP)]
@@ -1934,6 +1941,8 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
         #  if zLP > bestLP:
         if (zLP - bestLP) > 0.5:
             bestLP = zLP
+            with open(lbSummary,"a") as ff:
+                ff.write("{0:20.5f}\n".format(bestLP))
             noImprovement = 0
         else:
             noImprovement += 1
@@ -1998,19 +2007,6 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
     nrConstr = cpx.linear_constraints.get_num()
     print(" ... now constr is ", nrConstr)
 
-    #  zLP = cpx.solution.get_objective_value()
-    #  yLP = []
-    #  for j in range(inp.nI):
-    #      yLP.append(cpx.solution.get_values(y_ilo[j]))
-    #  zHat = cpx.solution.get_values(z_ilo)
-    #  print("Final sol = ", yLP)
-    #  nrFixed = 0
-    #  for j in range(inp.nI):
-    #      for t in range(inp.nP):
-    #          if yLP[j][t] >= (1.0 - _EPSI):
-    #              cpx.variables.set_lower_bounds(y_ilo[j][t], 1.0)
-    #              nrFixed += 1
-    #  print("Tot fixed to 1 is ", nrFixed)
     return globalProgr
 
 def inOutCycle2(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
@@ -2221,6 +2217,18 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
     the separation mechanism to each of these solutions. To get the pool of
     solution, it suffices to call :meth:`MIP.solve()` with the flag ``withPool=1``.
 
+    Here is a high-level description of the algorithm:
+
+    1. create master and worker
+    2. in-out cycle to quickly get a good lower bound
+    3. fixing schemes (optionals) to zero and one
+    4. add  corridor w.r.t. incumbent solution
+    5. solve current master and get master solution yHat
+    6. solve worker subproblem induced by yHat
+    7. add cut induced by subproblem solution to current master
+    8. if new incumbent is obtained, update bounds and corridor
+    9. if gap < :math:`\epsilon`, STOP. Else, go to s5.
+
     """
 
     globalProgr = 0
@@ -2246,41 +2254,44 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
         for t in range(inp.nP):
             cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
 
-    #  add some fixing scheme here
-    print("FIX TO ZERO HERE = ", fixToZero)
-    zero_cut = cplex.SparsePair(ind=fixToZero, val=[1.0]*len(fixToZero))
-    cpx.linear_constraints.add(lin_expr = [zero_cut],
-                               senses   = ["L"],
-                               rhs      = [nZero])
-#
-    print("FIX TO ONE HERE = ", fixToOne)
-    one_cut = cplex.SparsePair(ind=fixToOne, val=[1.0]*len(fixToOne))
-    cpx.linear_constraints.add(lin_expr = [one_cut],
-                               senses   = ["G"],
-                               rhs      = [nOne])
+    if len(fixToZero) > 0:
+        #  add some fixing scheme here
+        print("FIX TO ZERO HERE = ", fixToZero)
+        zero_cut = cplex.SparsePair(ind=fixToZero, val=[1.0]*len(fixToZero))
+        cpx.linear_constraints.add(lin_expr = [zero_cut],
+                                   senses   = ["L"],
+                                   rhs      = [nZero])
+    if len(fixToOne) > 0:
+        print("FIX TO ONE HERE = ", fixToOne)
+        one_cut = cplex.SparsePair(ind=fixToOne, val=[1.0]*len(fixToOne))
+        cpx.linear_constraints.add(lin_expr = [one_cut],
+                                   senses   = ["G"],
+                                   rhs      = [nOne])
 
-    print("Before adding cut to master : ", cpx.linear_constraints.get_num())
-    for i in range(nPool):
-    #  for i in range(0):
-        cutType = worker.separate(inp, yPool[i], 0.0, y_ilo, z_ilo)
-        if cutType > 0:
-            constrName = "heur." + str(i)
-            cpx.linear_constraints.add(lin_expr = [worker.cutLhs],
-                                       senses   = "L",
-                                       rhs      = [worker.cutRhs],
-                                       names    = [constrName])
-
-    print("After adding Pool cut to master : ", cpx.linear_constraints.get_num())
+    if nPool > 0:
+        print("Before adding cut to master : ", cpx.linear_constraints.get_num())
+        print("Adding solutions from pool of size ", nPool)
+        for i in range(nPool):
+        #  for i in range(0):
+            cutType = worker.separate(inp, yPool[i], 0.0, y_ilo, z_ilo)
+            if cutType > 0:
+                constrName = "heur." + str(i)
+                cpx.linear_constraints.add(lin_expr = [worker.cutLhs],
+                                           senses   = "L",
+                                           rhs      = [worker.cutRhs],
+                                           names    = [constrName])
+        print("After adding Pool cut to master : ", cpx.linear_constraints.get_num())
 
     #  #  add corridor constraint
-    addCorridor(inp, cpx, yPool[0], y_ilo, nWidth)
+    if nPool > 0:
+        addCorridor(inp, cpx, yPool[0], y_ilo, nWidth)
 
     #  initialize data structure
     yFixed = [ [0 for i in range(inp.nP)] for t in range(inp.nI)]
-    ySol = []
+    ySol   = []
+    zHat   = -1
     for j in range(inp.nI):
         ySol.append([])
-    zHat = -1
 
     nIter        = 0
     stopping     = 0
@@ -2300,6 +2311,11 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
 
         cpx.solve()
         bestLB = cpx.solution.get_objective_value()
+        with open(lbSummary,"a") as ff:
+            ff.write("{0:20.5f}\n".format(bestLB))
+        print("new best LB = ", bestLB)
+        input("..lb..")
+        
         if (bestUB - bestLB) <= maxTolerance:
             stopping = 1
             continue
@@ -2322,7 +2338,9 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
                 if ub < bestUB:
                     bestUB = ub
                     #  add corridor constraint
-                    addCorridor(inp, cpx, yPool[0], y_ilo, nWidth)
+                    #  addCorridor(inp, cpx, yPool[0], y_ilo, nWidth)
+                    if cPercent > 0.0:
+                        addCorridor(inp, cpx, ySol, y_ilo, nWidth)
 
                 fixingToZero(inp, cpx, bestLB, bestUB, y_ilo, yFixed)
 
@@ -2362,15 +2380,19 @@ def main(argv):
         4.  Cplex MIP solver
 
     """
+    global fixToZero
+    global fixToOne
+        #  outfile.write("{0:20s} {1:20.5f} {2:25s} {3:20.5f} {4:20.7f} {5:20.7f}\n".
+        #                format(inputfile, zOpt, stat, lb, gap, zTime))
 
     parseCommandLine(argv)
     inp = Instance(inputfile)
     if algo == 1:
         mip       = MIPReformulation(inp)
-        fixToZero = mip.solveLPZero(inp)
-        fixToOne  = mip.solveLPOne(inp)
-        zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
-        print("zHeur = ", zHeur)
+        #  fixToZero = mip.solveLPZero(inp)
+        #  fixToOne  = mip.solveLPOne(inp)
+        #  zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
+        #  print("zHeur = ", zHeur)
         benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne)
         exit(101)
     if algo == 2:
@@ -2390,6 +2412,8 @@ def main(argv):
         mip.solve(inp, withPrinting=1)
         exit(104)
 
+    print("Algorithm Type not defined. Choose between 1 and 4.")
+    exit(105)
 
     #  ======================================================================
     #  All this stuff below is used to define cplex callback. This was the first
