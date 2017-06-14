@@ -296,7 +296,7 @@ yRef      = []
 yPool     = []
 nPool     = 0
 ubBest    = 0.0
-startTime = -1;
+startTime = time()
 
 class SolveNodeCallback(SimplexCallback):
     def __call__(self):
@@ -1942,7 +1942,8 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
         if (zLP - bestLP) > 0.5:
             bestLP = zLP
             with open(lbSummary,"a") as ff:
-                ff.write("{0:20.5f}\n".format(bestLP))
+                ff.write("{0:20.5f} {1:20.5} \n".format(bestLP,
+                time()-startTime))
             noImprovement = 0
         else:
             noImprovement += 1
@@ -2312,9 +2313,7 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
         cpx.solve()
         bestLB = cpx.solution.get_objective_value()
         with open(lbSummary,"a") as ff:
-            ff.write("{0:20.5f}\n".format(bestLB))
-        print("new best LB = ", bestLB)
-        input("..lb..")
+            ff.write("{0:20.5f} {1:20.5f} \n".format(bestLB, time()-startTime))
         
         if (bestUB - bestLB) <= maxTolerance:
             stopping = 1
@@ -2382,11 +2381,13 @@ def main(argv):
     """
     global fixToZero
     global fixToOne
+    global startTime
         #  outfile.write("{0:20s} {1:20.5f} {2:25s} {3:20.5f} {4:20.7f} {5:20.7f}\n".
         #                format(inputfile, zOpt, stat, lb, gap, zTime))
 
     parseCommandLine(argv)
     inp = Instance(inputfile)
+    startTime = time()
     if algo == 1:
         mip       = MIPReformulation(inp)
         #  fixToZero = mip.solveLPZero(inp)
@@ -2397,15 +2398,15 @@ def main(argv):
         exit(101)
     if algo == 2:
         mip       = MIPReformulation(inp)
-        fixToZero = mip.solveLPZero(inp)
-        fixToOne  = mip.solveLPOne(inp)
+        #  fixToZero = mip.solveLPZero(inp)
+        #  fixToOne  = mip.solveLPOne(inp)
         lagrange = Lagrange(inp, 99999999)
         lagrange.lagrangeanPhase(inp, mip, fixToZero, fixToOne, cPercent, cZero,
         cOne)
         exit(102)
     if algo == 3:
         dw = DantzigWolfe(inp)
-        dw.dw_cycle(inp)
+        dw.dw_cycle(inp, lbSummary, startTime)
         exit(103)
     if algo == 4: #  Cplex MIP solver
         mip       = MIPReformulation(inp)

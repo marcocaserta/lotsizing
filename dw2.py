@@ -48,11 +48,13 @@ import random
 from decimal import *
 random.seed(27)
 
+
 _INFTY   = sys.float_info.max
 #  _EPSI = sys.float_info.epsilon
 _EPSI    = 0.00001
 bigM     = 1.0e8
 nSolInPool =1000000
+#  nSolInPool =1000
 maxIter  = 40
 
 
@@ -88,6 +90,7 @@ class DantzigWolfe:
         self.cpxSub.set_results_stream(None)
         self.cpxSub.set_log_stream(None)
         self.cpxSub.set_warning_stream(None)
+        self.cpxSub.parameters.timelimit.set(3) #  max running time per item
         self.define_ulsp(inp)
 
 
@@ -443,6 +446,7 @@ class DantzigWolfe:
         return rc
             
     def column_generation(self, inp, u, alpha, theta):
+        lb   = 0.0
         cpxSub = self.cpxSub
         stopping = True
         for j in range(inp.nI):
@@ -450,18 +454,21 @@ class DantzigWolfe:
             #  print("* ITEM ", j)
             #  print("====================")
             rc = self.solve_ulsp(inp, u, alpha, theta, j)
+            lb += rc + alpha[j]
+            #  if rc < _EPSI:
             #  print("WW solution (q=0)")
             #  print("yWW :: ", self.yWW)
             #  print("xWW :: ", self.xWW)
             #  print("sWW :: ", self.sWW)
             #  if rc < -_EPSI or self.iterNr <= 1:
-            if rc < 10000*_EPSI or self.iterNr <= 1:
+            #  if rc < 1000000*_EPSI or self.iterNr <= 1:
+            if rc < bigM or self.iterNr <= 1:
                 stopping = False
                 self.add_column_to_master(inp, j, 0)
                 self.get_columns(inp, j, u, alpha)
             #  input(".. next item ..")
 
-        return stopping
+        return stopping, lb
         
     def add_dominated_column_to_master(self, inp, item, q):
         cpxMaster = self.cpxMaster
@@ -529,6 +536,7 @@ class DantzigWolfe:
                                        rhs      = [yWW[t]],
                                        names    = [constrName])
 
+        #  ensure that at least one element will be different from WW sol
         rhs = 1 - sum([yWW[t] for t in range(inp.nP)])
         index = [y_ilo[t] for t in range(inp.nP)]
         value = [(1-2*yWW[t]) for t in range(inp.nP)]
@@ -551,7 +559,7 @@ class DantzigWolfe:
         # collecting pool solutions (one of them should be WW)
         names = cpxSub.solution.pool.get_names()
         nPool = len(names)
-        #  print("POOL size = ", nPool)
+        print("POOL size = ", nPool)
         #  for n in names:
         #      print("z(",n,") = ", cpxSub.solution.pool.get_objective_value(n))
             
@@ -574,20 +582,35 @@ class DantzigWolfe:
 
 
 
-    def dw_cycle(self, inp):
+    def dw_cycle(self, inp, lbSummary, startTime):
+
+        lbStar = 0.0 
         
         u, alpha, theta = self.initialize_multipliers(inp)
         self.iterNr     = 0
         stopping        = False
+        zMaster         = 0.0
         while not stopping and self.iterNr < maxIter:
             self.iterNr += 1
-            stopping = self.column_generation(inp, u, alpha, theta)
+            stopping, lb = self.column_generation(inp, u, alpha, theta)
+            # computing LB using Lagrange
+            lb += sum([inp.cap[t]*u[t] for t in range(inp.nP)])
+            if lb > lbStar:
+                lbStar = lb
+                with open(lbSummary,"a") as ff:
+                    ff.write("{0:20.5f} {1:20.5} \n".format(lbStar,
+                    time()-startTime))
+            print("Lagrangean Bound = ", lb)
             self.cpxMaster.solve()
             #  self.cpxMaster.write("master.lp")
             u, alpha, theta = self.get_master_solution(inp)
             nLambda = sum([len(self.l_ilo[j]) for j in range(inp.nI)])
+            zMaster = self.cpxMaster.solution.get_objective_value()
             print("MASTER INFO :: z({0:3d}) = {1:15.2f} -- size :: lambda =\
-            {2:5d}".format(self.iterNr, self.cpxMaster.solution.get_objective_value(), nLambda))
+            {2:5d}".format(self.iterNr, zMaster, nLambda))
+            if (zMaster - lbStar) <= _EPSI:
+                stopping = True
+
             
         
         # redefine master as MIP and solve it

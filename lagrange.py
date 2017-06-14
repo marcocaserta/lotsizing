@@ -50,8 +50,9 @@ random.seed(27)
 
 _INFTY = sys.float_info.max
 _EPSI  = sys.float_info.epsilon
-maxIter = 500
+maxIter = 500000
 
+from clspBenders import lbSummary, startTime
 
 class Lagrange:
     """
@@ -241,6 +242,9 @@ class Lagrange:
         if the newly found value ``zL`` is better (higher) than the best known
         lower bound so far, we update the lower bound.
         """
+        global startTime
+        global lbSummary
+
         lmult  = self.lmult
         cpx    = self.cpx
         iterL  = self.iterL
@@ -268,6 +272,9 @@ class Lagrange:
         if zL > lbStar:
             improvement = (zL - lbStar)/lbStar
             lbStar = zL
+            with open(lbSummary,"a") as ff:
+                ff.write("{0:20.5f} {1:20.5} \n".format(lbStar,
+                time()-startTime))
         else:
             improvement = 0.0
 
@@ -443,7 +450,8 @@ class Lagrange:
         in the last 50 iterations is below a certain value, we assume the
         Lagrangean phase has converged and, therefore, we stop (or restart).
         """
-        if (self.lb50 - self.lbInit)/self.lbInit < 0.0001:
+        #  if (self.lb50 - self.lbInit)/self.lbInit < 0.0001:
+        if (self.lb50 - self.lbInit)/self.lbInit < _EPSI:
             return True
         else:
             self.lb50   = self.zL
@@ -482,8 +490,8 @@ class Lagrange:
             normH       = 0.0
             hVal1       = [0.0]*inp.nP
             hVal2       = [0.0]*inp.nP
-            #  self.delta  = 0.001
-            self.delta  = 0.0001
+            self.delta  = 0.00000001
+            #  self.delta  = 0.0001
             converged   = False
             self.lb50   = _EPSI
             self.lbInit = _EPSI
@@ -495,7 +503,8 @@ class Lagrange:
 
                 #  if self.iterL > 10 and self.improvement > 0.001:
                 if (self.iterL % 10) == 0 :
-                    self.refineMIPSolution(inp, mip, cPercent)
+                    if cPercent > 0.0:
+                        self.refineMIPSolution(inp, mip, cPercent)
                 self.iterL += 1
 
                 if (self.iterL % 50) == 0:
