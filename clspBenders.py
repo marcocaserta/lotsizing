@@ -885,9 +885,10 @@ class MIP:
         global ubBest
         global yPool
         global nPool
+        global startTime
 
         y_ilo = self.y_ilo
-        z_ilo = self.z_ilo
+        #  z_ilo = self.z_ilo
         cpx   = self.cpx
 
         #  cpx.set_results_stream(None)
@@ -896,8 +897,8 @@ class MIP:
         cpx.parameters.mip.limits.solutions.set(nSol)
         cpx.parameters.mip.display.set(display)
         #  cpx.parameters.mip.interval.set(500) # how often to print info
-        #  cpx.parameters.mip.tolerances.mipgap.set(0.000000001)
-        #  cpx.parameters.mip.tolerances.absmipgap.set(0.000000001)
+        cpx.parameters.mip.tolerances.mipgap.set(0.000000001)
+        cpx.parameters.mip.tolerances.absmipgap.set(0.000000001)
 
 
         cpx.solve()
@@ -905,6 +906,7 @@ class MIP:
         if withPrinting == 1:
             print("STATUS = ", cpx.solution.status[cpx.solution.get_status()])
             print("OPT SOL found = ", cpx.solution.get_objective_value())
+            print("Time          = ", time() - startTime)
         #  if cpx.solution.get_status() == cpx.solution.status.optimal_tolerance\
             #  or cpx.solution.get_status() == cpx.solution.status.optimal:
         ubBest = cpx.solution.get_objective_value()
@@ -2172,6 +2174,7 @@ def setCpxParameters(cpx):
     cpx.parameters.preprocessing.presolve.set(cpx.parameters.preprocessing.presolve.values.off)
     cpx.parameters.threads.set(1)
     cpx.parameters.mip.strategy.search.set(cpx.parameters.mip.strategy.search.values.traditional)
+    cpx.parameters.timelimit.set(30)
 
 def getSolution(inp, cpx, y_ilo, z_ilo):
     ySol = []
@@ -2359,6 +2362,33 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
     print(" ** UB = ", bestUB)
 
 
+def printParameters():
+
+    if algo == 1:
+        algoType = "** Benders"
+    elif algo == 2:
+        algoType = "** Lagrange"
+    elif algo == 3:
+        algoType = "** Dantzig-Wolfe"
+    elif algo == 4:
+        algoType = "** CPLEX "
+    else:
+        algoType = "--> ERROR in algorithm selection !"
+
+    print("==================================================================")
+    print(" Marco Caserta 2017 - Benders, Lagrange, Dantzig-Wolfe ")
+    print("==================================================================")
+    print("\n")
+    print("  Instance file \t :: {0:30s}".format(inputfile))
+    print("  Algorithm     \t :: {0:30s}".format(algoType))
+    print("  Parameters    \t :: ")
+    print("   - Corridor Width \t = {0:20.5f}".format(cPercent))
+    print("   - Soft Fix Zero  \t = {0:20.5f}".format(cZero))
+    print("   - Soft Fix One   \t = {0:20.5f}".format(cOne))
+    print("==================================================================")
+    print("\n")
+
+
 
 def main(argv):
     """
@@ -2388,6 +2418,7 @@ def main(argv):
     parseCommandLine(argv)
     inp = Instance(inputfile)
     startTime = time()
+    printParameters()
     if algo == 1:
         mip       = MIPReformulation(inp)
         #  fixToZero = mip.solveLPZero(inp)
@@ -2398,8 +2429,8 @@ def main(argv):
         exit(101)
     if algo == 2:
         mip       = MIPReformulation(inp)
-        #  fixToZero = mip.solveLPZero(inp)
-        #  fixToOne  = mip.solveLPOne(inp)
+        fixToZero = mip.solveLPZero(inp)
+        fixToOne  = mip.solveLPOne(inp)
         lagrange = Lagrange(inp, 99999999)
         lagrange.lagrangeanPhase(inp, mip, fixToZero, fixToOne, cPercent, cZero,
         cOne)
@@ -2409,7 +2440,8 @@ def main(argv):
         dw.dw_cycle(inp, lbSummary, startTime)
         exit(103)
     if algo == 4: #  Cplex MIP solver
-        mip       = MIPReformulation(inp)
+        #  mip       = MIPReformulation(inp)
+        mip       = MIP(inp)
         mip.solve(inp, withPrinting=1)
         exit(104)
 

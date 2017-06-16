@@ -1,0 +1,743 @@
+/***************************************************************************
+ *   copyright (C) 2015 by Marco Caserta                                   *
+ *   marco dot caserta at ie dot edu                                       *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ ***************************************************************************/
+/**! \file chart.cpp
+   \brief Algorithm for the Multiple-choice Multidimensional Knapsack Problem
+
+   Author: Marco Caserta (marco dot caserta at ie dot edu)\n
+   Started: 05.02.15\n
+   Ended:   \n 
+
+   Compile with: make
+   Execute with: ./bin/chart -f "input_data_file" 
+*/
+#include <ilcplex/ilocplex.h>
+ILOSTLBEGIN
+
+#include <iostream>
+#include <cstdlib>
+#include <ctime>
+#include <fstream>
+#include <cstring>
+#include <iomanip>
+#include <cassert>
+
+
+#include "timer.h"
+#include "options.h"
+
+#include "SampleDecoder.h"
+#include "MTRand.h"
+#include "BRKGA.h"
+
+#include "lagrange.h"
+#include "cplex.h"
+
+using namespace std;
+char* _FILENAME; 	//!< name of the instance file
+double time_limit;	//!< wall-clock time limit
+
+ofstream flagr("lagrange.txt", ios::out);
+
+struct INSTANCE {
+    int nR;			// number of resources (constraints)
+    int nC;			// number of classes
+    int * ri;			// number of items in each class i
+  
+    double  ** c;
+    int *** w;
+    int   * R;
+};
+
+INSTANCE inputData;		// full dataset (original)
+INSTANCE * inp;			// working instance
+int * xBest;			// best solution found by brkga
+int generation;			// iteration counter for brkga
+int * xGA;
+
+double INFTY = std::numeric_limits<double>::infinity();
+const long _MAXRANDOM  = 2147483647;
+const double ZERO      = 0.0e0;
+const double EPSI      = 0.0000001;
+
+
+const double corridorWidthBase = 0.80; // used to be 0.9
+const int nSolBase = 3;
+
+timer tTime;            //!< Ojbect clock to measure REAL and VIRTUAL (cpu) time
+
+
+/************************ FUNCTIONS ******************************/
+void read_problem_data(INSTANCE & inp);
+void define_problem(INSTANCE & inputData, INSTANCE * inp);
+void print_options(INSTANCE inp);
+void lagrangean_phase(INSTANCE & inp, IloModel & model, IloCplex & cplex, TwoD & x_ilo, 
+		      IloObjective & obj);
+double get_first_lb(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, 
+		    int nSol);
+void update_best(int * xLBest, int * xL, double & ubStar, double zL, double * lambda, double * lambdaBest);
+double corridor_method(IloModel & model, IloCplex & cplex, TwoD & x_ilo, 
+		       IloObjective & obj, int * xLBest, double & zBest, double ** rc, int * xIlo);
+double refine_solution(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, int * xL, 
+		       double & cWidth, int & nSol, double & zBest, int * xIlo, int & iterImproved, 
+		       int iter, double ** rc, bool fix2zero, bool fix2one, IloRangeArray & cutSol);
+void find_best(int * F, double ** rc);
+void find_worst(int ** F0, double ** rc, double propFixed0);
+void cut_out_solution(IloModel & model, IloCplex & cplex, TwoD & x_ilo, int * xIlo, IloRangeArray & cutSol);
+void add_z_cut(IloModel & model, IloCplex & cplex, TwoD & x_ilo, double zBest);
+
+void hard_fix_zero(int ** F0, double * lambda);
+
+/************************ FUNCTIONS ******************************/
+
+
+/************************ MAIN PROGRAM ******************************/
+/// Main program
+/************************ MAIN PROGRAM ******************************/
+int main(int argc, char *argv[])
+{
+    //freopen("debug.txt", "w", stdout); //!< redirect output to a file
+    int err = parseOptions(argc, argv);
+    if ( err != 0)
+    { if (err != -1) cout << "Error argument " << err+1 << endl; exit(1); }
+
+
+    tTime.resetTime();		      // start clock
+
+    read_problem_data(inputData); // read instance data
+    print_options(inputData);
+
+    define_problem(inputData, inp);
+
+    /// cplex stuff
+    IloEnv env;
+    IloModel model(env);
+    IloCplex cplex(model);
+    TwoD x_ilo(env, inp->nC);
+    for (int i = 0; i < inp->nC; i++)
+	x_ilo[i] = IloNumVarArray(env, inp->ri[i], 0, 1, ILOINT);
+    IloObjective obj = IloAdd(model, IloMaximize(env, 0));
+
+    lagrangean_phase(inp, model, cplex, x_ilo, obj);
+
+#ifdef W_brkGA
+    // add content of file brkGA.txt
+#endif // brkGA
+
+    flagr.close();
+
+    exit(0);
+}
+
+
+/************************ FUNCTIONS ******************************/
+/// Functions
+/************************ FUNCTIONS ******************************/
+void read_problem_data(INSTANCE & inp)
+{
+    int temp;
+
+    ifstream fdata(_FILENAME, ios::in);
+    if (!fdata)
+    {
+	cerr << "Cannot open file " << _FILENAME << endl; exit(1);
+    }
+   
+    fdata >> inp.nC >> temp >> inp.nR;
+
+    // all the classes have the same nr of elements
+    inp.ri = new int[inp.nC];
+    inp.c  = new double*[inp.nC];
+    inp.w  = new int**[inp.nC];
+    for (int i = 0; i < inp.nC; i++)
+    {
+	inp.ri[i] = temp;
+	inp.c[i] = new double[inp.ri[i]];
+	inp.w[i] = new int*[inp.ri[i]];
+	for (int j = 0; j < inp.ri[i]; j++)
+	    inp.w[i][j] = new int[inp.nR];
+    }
+
+    // read rhs of knapsack constraints
+    inp.R = new int[inp.nR];
+    for (int k = 0; k < inp.nR; k++)
+	fdata >> inp.R[k];
+
+    // read data for each class
+    for (int i = 0; i < inp.nC; i++)
+    {
+	fdata >> temp;
+	assert(temp == (i+1));
+
+	for (int j = 0; j < inp.ri[i]; j++)
+	{
+	    fdata >> inp.c[i][j];
+	    for (int k = 0; k < inp.nR; k++)
+		fdata >> inp.w[i][j][k];
+	}
+    }
+}
+
+
+
+/// Print instance info and algorithmic parameters.
+void print_options(INSTANCE inp)
+{
+    cout << "-------------------------------------" << endl;
+    cout << "- OPTIONS : " << endl;
+    cout << "-------------------------------------" << endl;
+    cout << " Nr. Classes\t \t :: " << inp.nC << endl;
+    cout << " Nr. Resources\t \t :: " << inp.nR << endl;
+    cout << " Nr. Items per class\t :: " << inp.ri[0] << endl;
+    cout << "-------------------------------------" <<  endl << endl;   
+}
+
+void lagrangean_phase(INSTANCE & inp, IloModel & model, IloCplex & cplex, TwoD & x_ilo, 
+		      IloObjective & obj)
+{
+
+    IloEnv env = model.getEnv();
+    IloRangeArray cutSol(env);
+
+    // setup instance data
+    define_problem(inputData, inp);
+
+    // initialize data structure for Lagrangean phase
+    double * lambda     = new double[inp.nR];
+    double * lambdaBest = new double[inp.nR];
+    int * xL            = new int[inp.nC]; // current lagrangean solution
+    int * xLBest        = new int[inp.nC]; // best lagrangean solution (infeasible)
+    int * xIlo          = new int[inp.nC]; // best feasible solution from cplex
+    double lb           = ZERO;
+    double zBest        = ZERO;
+
+    
+    zBest = get_first_lb(model, cplex, x_ilo, obj, 1);// nr feasible solutions to be found by cplex
+    cout << "First feasible solution = " << zBest << endl;
+
+    int aka;
+    cin >> aka;
+
+    lambda_initialization(lambda);
+    
+    double zL, bestLagr, worstLagr;
+
+    
+    double ** rc = new double*[inp.nC]; // lagrangean reduced costs
+    for (int i = 0; i < inp.nC; i++)
+	rc[i] = new double[inp.ri[i]];
+
+    int lagrIter = 0;
+    while (lagrIter < 3) 
+    {
+	double cWidth     = corridorWidthBase;   // <---------- used to be 0.8
+	int iterImproved  = 200;
+	int nSol          = nSolBase;		// nr of solutions for cplex
+	int Freq          = 40;
+
+	int iter         = 0;
+	double ubStar    = INFTY;
+	double start300  = INFTY;
+	double best300   = INFTY;
+	double delta     = 0.1;
+	bool stopping    = false;
+	bool fix2zero    = false;
+	bool fix2one     = false;
+
+	while (iter <= 2000 && !stopping)
+	{
+	    // note: zL in an "upper bound" of the optimal value
+	    zL = lagrange_step(lambda, xL, iter, rc);
+	    if (zL < ubStar)
+		update_best(xLBest, xL, ubStar, zL, lambda, lambdaBest);
+
+	    stopping = lambda_update(lambda, delta, xL, bestLagr, worstLagr, zL, zBest, iter, 
+				     best300, start300);
+
+	    if (iter > 199) 
+	    {
+		fix2one = true;
+		fix2zero = true;
+	    }
+
+	    if (iter > 100 && (iter % Freq) == 0)
+		lb = refine_solution(model, cplex, x_ilo, obj, xL, cWidth, nSol, zBest, 
+				     xIlo, iterImproved, iter, rc, fix2zero, fix2one, cutSol);
+
+	    if ((iter > 250) && (iter - iterImproved) > 100)
+	    {
+		Freq /= 2;
+		if (Freq < 5) Freq = 5;
+		cWidth *= 0.9;
+		iterImproved = iter;
+		nSol++;
+		cout << "Enhancing corridor to : " << cWidth << " and nsol to " << nSol << endl;
+		int aka;
+		cin >> aka;
+	    }
+
+	    iter++;
+	}
+
+	cout << "** ** ** Lagrangean Iteration Nr. " << lagrIter << " :: Best LB = " << zBest << endl;
+	cout << setw(49) << " :: Best UB = " << ubStar << endl;
+
+	int ka;
+	cin >> ka;
+
+	cout << "Before removing cuts " << cplex.getNrows() << " constraints " << endl;
+	model.remove(cutSol);
+	cout << "After removing cuts " << cplex.getNrows() << " constraints " << endl;
+
+	// setup for new lagrangean iteration
+	lagrIter++;
+	if (lagrIter < 3)
+	{
+	    lambda_random_perturbation(lambda, lambdaBest);
+	    int ** F0 = new int*[inputData.nC];
+	    hard_fix_zero(F0, lambdaBest);
+
+	    //delete [] inp;
+
+	    //define_new_problem(F0, inputData, inp);
+	}
+    }
+    
+
+    
+    //fix_to_zero(rc, ubStar, zBest);
+    corridor_method(model, cplex, x_ilo, obj, xIlo, zBest, rc, xIlo);
+    //corridor_method(model, cplex, x_ilo, obj, xLBest, zBest, (double **)inp.c);
+}
+
+void update_best(int * xLBest, int * xL, double & ubStar, double zL, double * lambda, double * lambdaBest)
+{
+    ubStar = zL;
+    for (int i = 0; i < inp.nC; i++)
+	xLBest[i] = xL[i];
+
+    for (int k = 0; k < inp.nR; k++)
+	lambdaBest[k] = lambda[k];
+}
+
+double get_first_lb(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, 
+		    int nSol)
+{
+
+    defineModel(model, cplex, x_ilo, obj);		// get the first cplex solution
+    double statusBin = solve_KNAP(model, cplex, nSol, 3, 10);	// call cplex
+    return statusBin;
+}
+
+double corridor_method(IloModel & model, IloCplex & cplex, TwoD & x_ilo, 
+		       IloObjective & obj, int * xLBest, double & zBest, double ** rc, int * xIlo)
+{
+    IloEnv env = model.getEnv();
+
+#ifdef W_LAGR_COSTS
+    // solve using lagrangean costs + feasibility (i.e., knapsack) constraints
+    for (int i = 0; i < inp.nC; i++)
+	for (int j = 0; j < inp.ri[i]; j++)
+	    obj.setLinearCoef(x_ilo[i][j], rc[i][j]);
+    model.add(obj);
+#endif
+
+
+    // add corridor around best feasible solution
+    IloExpr lhsCorridor(env);
+    IloRangeArray neighborhood(env);
+    double rhs = 0.98*(double)(inp.nC);
+
+    for (int i = 0; i < inp.nC; i++)
+	lhsCorridor += x_ilo[i][xIlo[i]];
+    
+    neighborhood.add(lhsCorridor >= rhs);
+    model.add(neighborhood);
+
+
+    int iter = 0;
+    bool stopping = false;
+    while(!stopping)
+    {
+	double statusBin = solve_KNAP(model, cplex, 10000, 3, 300);	// call cplex
+	
+	cout << "changing objective coefficients to original costs and restart ... " << endl;
+	// evaluate solution (this is needed in the first iter)
+	cout << "z[" << iter << "]  = " << get_cplex_sol(model, cplex, x_ilo, xIlo) << endl;
+
+	cout << "CPLEX Status :: " << cplex.getStatus() << endl;
+
+#ifdef W_LAGR_COSTS
+	for (int i = 0; i < inp.nC; i++)
+	    for (int j = 0; j < inp.ri[i]; j++)
+		obj.setLinearCoef(x_ilo[i][j], inp.c[i][j]);
+	model.add(obj);
+#endif
+	
+	// remove neighborhood constraint
+	model.remove(neighborhood);
+	lhsCorridor.end();
+	cout << " .... corridor removed ... " << endl;
+
+	iter++;
+
+	if (iter > 1) stopping = true;
+
+	int abc;
+	cin >> abc;
+    }
+    
+    return  -1.0;
+}
+
+double refine_solution(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, int * xL, 
+		       double & cWidth, int & nSol, double & zBest, int * xIlo, int & iterImproved, int iter, 
+		       double ** rc, bool fix2zero, bool fix2one, IloRangeArray & cutSol)
+{
+
+    int  * F;
+    int ** F0;
+    int nFixed1       = 0;
+    int propFix1      = 0;
+    double propFixed0 = ZERO;
+    
+    if (fix2zero)
+	propFixed0 = 0.75;	// used to be 0.75
+    
+    if (fix2one)
+    {
+	nFixed1  = ceil(0.25*(double)inp.nC); // used to be 0.25
+	propFix1 = ceil(cWidth*(double)nFixed1);
+    }
+
+
+    IloEnv env = model.getEnv();
+
+
+    // add corridor constraint
+    IloExpr lhsCorridor(env);
+    IloRangeArray neighborhood(env);
+    double rhs = cWidth*(double)(inp.nC);
+
+    for (int i = 0; i < inp.nC; i++)
+	lhsCorridor += x_ilo[i][xL[i]];
+
+    neighborhood.add(lhsCorridor >= rhs);
+    model.add(neighborhood);
+
+
+    IloExpr lhs0(env);
+    IloRangeArray fix_to_zero(env);
+    IloExpr lhs(env);
+    IloRangeArray cut(env);
+    int count0 = 0;
+	
+
+    if (fix2zero)
+    {
+	F0 = new int*[inp.nC];
+	for (int i = 0; i < inp.nC; i++)
+	{
+	    F0[i] = new int[inp.ri[i]];
+	    for (int j = 0; j < inp.ri[i]; j++)
+		F0[i][j] = 0;
+	}
+    
+	find_worst(F0, rc, propFixed0);    
+
+	for (int i = 0; i < inp.nC; i++)
+	    for (int j = 0; j < inp.ri[i]; j++)
+		if (F0[i][j] == 1)
+		{
+		    lhs0 += x_ilo[i][j];
+		    fix_to_zero.add(x_ilo[i][j] == ZERO);
+		    count0++;
+		}
+	//fix_to_zero.add(lhs0 == ZERO);
+	//fix_to_zero.add(lhs0 <= (1.0-cWidth)*count0); //hard
+	//fix_to_zero.add(lhs0 <= cWidth*count0);  // soft
+	model.add(fix_to_zero);
+    }
+
+
+    if (fix2one)
+    {
+	F = new int[inp.nC];
+	for (int i = 0; i < inp.nC; i++)
+	    F[i] = -1;
+
+	for (int k = 0; k < nFixed1; k++)
+	    find_best(F, rc);
+	
+	for (int i = 0; i < inp.nC; i++)
+	    if (F[i] != -1)
+		lhs += x_ilo[i][F[i]];
+	
+	//cout << " ---- FIxED = " << ceil(cWidth*(double)nFixed) << " over " << nFixed << endl << endl;
+	
+	cut.add(lhs >= propFix1);
+	model.add(cut);
+    }
+	
+    //cout << "Nr constraints after adding ALL CUTS is " << cplex.getNrows() << endl;
+    
+    double statusBin = solve_KNAP(model, cplex, nSol, 0, 10);	// call cplex
+    
+    if (statusBin >= -1.0+EPSI) 
+    {
+	cout << " ... repaired solution is " << statusBin << "(z* = " <<  zBest << ") with cplex status :: " 
+	     << cplex.getStatus() << ". Params: [ zeros = " << count0 << ", ones = " << propFix1 << "/" 
+	     << nFixed1 << "]" << endl;
+
+	cout << "Nr. Constraints before cutting out solutions is : " << cplex.getNrows() << endl;
+
+	int * xRepaired = new int[inp.nC];
+	get_cplex_sol(model, cplex, x_ilo, xRepaired);
+	cut_out_solution(model, cplex, x_ilo, xRepaired, cutSol);
+
+	cout << "Nr. Constraints after cutting out solutions is : " << cplex.getNrows() << endl;
+	    
+	if (statusBin > zBest)
+	{
+	    //add_z_cut(model, cplex, x_ilo, statusBin);
+	    cWidth = corridorWidthBase;
+	    nSol   = nSolBase;
+	    for (int i = 0; i < inp.nC; i++) xIlo[i] = xRepaired[i];
+	    //get_cplex_sol(model, cplex, x_ilo, xIlo);
+	    zBest = statusBin;
+	    cout << "... improved best lb(" << iter << ") = " << zBest << endl;
+	    cout << "... corridor width restored to " << cWidth << endl;
+	    cout << "... nSol restored to " << nSol << endl;
+	    iterImproved = iter; // save iteration of last improvement
+	    
+	    // study cplex vs lagrangean solution
+	    int cc = 0;
+	    for (int i = 0; i < inp.nC; i++)
+	    {
+		if (xL[i] != xIlo[i])
+		    cc++;
+
+#ifdef AAA		
+		cout << "COMPONENT " << i << " fixed element is " << F[i] << endl;
+		if (F[i] != -1 && F[i] != xIlo[i])
+		{
+		    cout << " ++++++++++++++++++++++++++++++++++" << endl;
+		    int aka;
+		    cin >> aka;
+		}
+
+		if (F0[i][xIlo[i]] == 1)
+		{
+		    cout << " >>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << endl;
+		    int aka;
+		    cin >> aka;
+		}
+
+		
+		for (int j = 0; j < inp.ri[i]; j++)
+		{
+		    if (xIlo[i] == j)
+			cout << "x(" << i << "," << j << ") = 1  vs rc = " << rc[i][j] << " vs " << F0[i][j] << endl;
+		    else
+			cout << "x(" << i << "," << j << ") = 0  vs rc = " << rc[i][j] << " vs " << F0[i][j] << endl;
+		}
+#endif				    		
+	    }
+	    
+	    
+	    cout << "Nr. different between lagr and cplex = " << cc << endl;
+	    int abc;
+	    cin >> abc;
+	}
+	
+    }
+
+    if (fix2one)
+    {
+	// remove fix_to_one constraint
+	model.remove(cut);
+	cut.end();
+	lhs.end();
+    }
+    
+    if (fix2zero)
+    {
+	// remove fix to zero
+	model.remove(fix_to_zero);
+	lhs0.end();
+	fix_to_zero.end();
+    }
+
+
+    // remove neighborhood constraint
+    model.remove(neighborhood);
+    lhsCorridor.end();
+	
+    //cout << "Nr constraints after removing ALL CUTS is " << cplex.getNrows() << endl;
+
+    return statusBin;
+}
+
+void find_best(int * F, double ** rc)
+{
+    double bestRC = -INFTY;
+    int group = -1;
+    int item  = -1;
+    for (int i = 0; i < inp.nC; i++)
+    {
+	if (F[i] != -1) continue;
+	for (int j = 0; j < inp.ri[i]; j++)
+	    if (rc[i][j] > bestRC)
+	    {
+		bestRC = rc[i][j];
+		group  = i;
+		item   = j;
+	    }
+    }
+    if (group != -1)
+	F[group] = item;
+    else
+    {
+	cout << "Unable to fix variable " << endl;
+	exit(144);
+    }
+}
+
+void find_worst(int ** F0, double ** rc, double propFixed0)
+{
+    
+    for (int i = 0; i < inp.nC; i++)
+    {
+	int nFixed = ceil(propFixed0*(double)inp.ri[i]);	
+	//cout << "for module " << i << " we fix " << nFixed << " elements " << endl;
+
+	for (int counter = 0; counter < nFixed; counter++)
+	{
+	    double worstRC = INFTY;
+	    int item       = -1;
+	    for (int j = 0; j < inp.ri[i]; j++)
+	    {
+		if (F0[i][j] == 1) continue;
+
+		if (rc[i][j] < worstRC)
+		{
+		    worstRC = rc[i][j];
+		    item    = j;
+		}
+	    }
+	    if (item != -1)
+		F0[i][item] = 1;
+	    else
+	    {
+		cout << "something wrong here ... " << endl;
+		exit(123);
+	    }
+	}
+    }
+}
+
+
+void cut_out_solution(IloModel & model, IloCplex & cplex, TwoD & x_ilo, int * xIlo, IloRangeArray & cutSol)
+{
+    IloEnv env = model.getEnv();
+
+    IloExpr lhs(env);
+    //IloRangeArray cutSol1(env);
+    for (int i = 0; i < inp.nC; i++)
+	lhs += x_ilo[i][xIlo[i]];	 
+
+	// for (int j = 0; j < inp.ri[i]; j++)
+	//     if (cplex.getValue(x_ilo[i][j]) >= 1.0 - EPSI)
+	//  	lhs += x_ilo[i][j];
+    
+	
+
+    cutSol.add(lhs <= inp.nC-1);
+    model.add(cutSol);
+
+}
+
+void add_z_cut(IloModel & model, IloCplex & cplex, TwoD & x_ilo, double zBest)
+{
+    IloEnv env = model.getEnv();
+
+    IloExpr lhs(env);
+    //IloRangeArray cutSol1(env);
+    for (int i = 0; i < inp.nC; i++)
+	for (int j = 0; j < inp.ri[i]; j++)
+	    lhs += (double)inp.c[i][j]*x_ilo[i][j];
+
+    model.add(lhs >= zBest);    
+}
+
+void define_problem(INSTANCE & inputData, INSTANCE * inp)
+{
+    inp.nC = inputData.nC;
+    inp.nR = inputData.nR;
+
+    inp.ri = new int[inp.nC];
+    inp.c  = new double*[inp.nC];
+    inp.w  = new int**[inp.nC];
+    for (int i = 0; i < inp.nC; i++)
+    {
+	inp.ri[i] = inputData.ri[i];
+	inp.c[i] = new double[inp.ri[i]];
+	inp.w[i] = new int*[inp.ri[i]];
+	for (int j = 0; j < inp.ri[i]; j++)
+	    inp.w[i][j] = new int[inp.nR];
+    }
+    // rhs of knapsack constraints
+    inp.R = new int[inp.nR];
+    for (int k = 0; k < inp.nR; k++)
+	inp.R[k] = inputData.R[k];
+
+    // read data for each class
+    for (int i = 0; i < inp.nC; i++)
+    {
+	for (int j = 0; j < inp.ri[i]; j++)
+	{
+	    inp.c[i][j] = inputData.c[i][j];
+	    for (int k = 0; k < inp.nR; k++)
+		inp.w[i][j][k] = inputData.w[i][j][k];
+	}
+    }
+}
+
+
+void hard_fix_zero(int ** F0, double * lambda)
+{
+    double ** rc = new double*[inp.nC];
+
+    // compute lagrangean costs
+    for (int i = 0; i < inp.nC; i++)
+    {
+	rc[i] = new double[inp.ri[i]];
+	F0[i] = new int[inp.ri[i]];
+	for (int j = 0; j < inp.ri[i]; j++)
+	{
+	    rc[i][j] = inp.c[i][j];
+	    for (int k = 0; k < inp.nR; k++)
+		rc[i][j] -=  lambda[k]*(double)inp.w[i][j][k];
+	}
+    }
+
+    // find worst 50%
+    find_worst(F0, rc, 0.5);    
+    
+}

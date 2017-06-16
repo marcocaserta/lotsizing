@@ -397,8 +397,8 @@ class Lagrange:
         range(inp.nP)])
         print("CORRIDOR = ", cPercent*inp.nP*inp.nI)
         rhs = cPercent*inp.nP*inp.nI - nrOnes
-        index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nI)]
-        value = [(1.0 - 2.0*yL[j][t]) for j in range(inp.nI) for t in range(inp.nI)]
+        index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP)]
+        value = [(1.0 - 2.0*yL[j][t]) for j in range(inp.nI) for t in range(inp.nP)]
         corridor = cplex.SparsePair(ind=index, val=value)
         cpx.linear_constraints.add(lin_expr = [corridor],
                                    senses   = ["L"],
@@ -450,8 +450,8 @@ class Lagrange:
         in the last 50 iterations is below a certain value, we assume the
         Lagrangean phase has converged and, therefore, we stop (or restart).
         """
-        #  if (self.lb50 - self.lbInit)/self.lbInit < 0.0001:
-        if (self.lb50 - self.lbInit)/self.lbInit < _EPSI:
+        if (self.lb50 - self.lbInit)/self.lbInit < 0.0001:
+        #  if (self.lb50 - self.lbInit)/self.lbInit < _EPSI:
             return True
         else:
             self.lb50   = self.zL
@@ -518,6 +518,14 @@ class Lagrange:
 
             print(" .. End Lagrangean Cycle {0:4d} .. Best LB = {1:10.2f}".\
                     format(mainCycle, self.bestLB))
+
+        print("Best UB Lagrange = {0:20.5f} in {1:20.5f}".format(self.ubStar, self.bestTime))
+        #  write solution to disk
+        with open("solution.txt", "w") as solFile:
+            solFile.write("L   :: {0:20.5f} {1:20.5f}\
+            {2:20.5f} {3:10.5f} {4:10.5f} {5:10.5f}\n".format(self.bestLB,
+            self.ubStar, self.bestTime, cPercent, cZero, cOne))
+        
 
     
 

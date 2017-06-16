@@ -1,0 +1,99 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+ADD_CUT_def	options.cpp	38;"	d	file:
+CORRIDOR_def	options.cpp	34;"	d	file:
+EPSI	cplex.cpp	/^const double EPSI      = 0.00000001;$/;"	v
+EPSI	lagrange.cpp	/^const double EPSI      = 0.00000001;$/;"	v
+EPSI	mmkp.cpp	/^const double EPSI      = 0.00001;$/;"	v
+F	mmkp.cpp	/^int  * F;			\/\/ F[i] = 3 ==> var 3 in class "i" is set to 1$/;"	v
+F0	mmkp.cpp	/^int **F0;			\/\/ F0[i][j] = 1 ==> var x_{ij} is set to 0$/;"	v
+INFTY	mmkp.cpp	/^double INFTY = std::numeric_limits<double>::infinity();$/;"	v
+INSTANCE	cplex.cpp	/^struct INSTANCE {$/;"	s	file:
+INSTANCE	lagrange.cpp	/^struct INSTANCE {$/;"	s	file:
+INSTANCE	mmkp.cpp	/^struct INSTANCE {$/;"	s	file:
+ITER_LIMIT_def	options.cpp	33;"	d	file:
+NSOL_def	options.cpp	35;"	d	file:
+Omega	mmkp.cpp	/^double Omega = 1.0;$/;"	v
+PROP_ONE_def	options.cpp	37;"	d	file:
+PROP_ZERO_def	options.cpp	36;"	d	file:
+R	cplex.cpp	/^    int   * R;$/;"	m	struct:INSTANCE	file:
+R	lagrange.cpp	/^    int   * R;$/;"	m	struct:INSTANCE	file:
+R	mmkp.cpp	/^		int   * R;			\/\/ r.h.s. values of the knapsack constraints$/;"	m	struct:INSTANCE	file:
+SampleDecoder	SampleDecoder.cpp	/^SampleDecoder::SampleDecoder()  { }$/;"	f	class:SampleDecoder
+TIME_LIMIT_def	options.cpp	32;"	d	file:
+ZERO	lagrange.cpp	/^const double ZERO      = 0.0e0;$/;"	v
+ZERO	mmkp.cpp	/^const double ZERO      = 0.0e0;$/;"	v
+_FILENAME	mmkp.cpp	/^char* _FILENAME; 	\/\/!< name of the instance file$/;"	v
+_MAXRANDOM	lagrange.cpp	/^const long _MAXRANDOM  = 2147483647;$/;"	v
+_MAXRANDOM	mmkp.cpp	/^const long _MAXRANDOM  = 2147483647;$/;"	v
+add_cut_corridor	cplex.cpp	/^void add_cut_corridor(IloModel & model, IloCplex & cplex, TwoD & x_ilo, int * xCorridor, int rhs, IloRangeArray & corridor, IloExpr lhs)$/;"	f
+add_oldSol_cut	mmkp.cpp	/^int add_oldSol_cut;		\/\/ boolean: cut out old feasible solution$/;"	v
+add_z_cut	mmkp.cpp	/^void add_z_cut(IloModel & model, IloCplex & cplex, TwoD & x_ilo, double zBest)$/;"	f
+bestIter	mmkp.cpp	/^int bestIter;			\/\/ lagr iteration in which best was found$/;"	v
+best_time	mmkp.cpp	/^double best_time;		\/\/ time to best solution$/;"	v
+c	cplex.cpp	/^    double  ** c;$/;"	m	struct:INSTANCE	file:
+c	lagrange.cpp	/^    double  ** c;$/;"	m	struct:INSTANCE	file:
+c	mmkp.cpp	/^		double  ** c;		\/\/ obj function coefficients$/;"	m	struct:INSTANCE	file:
+corridorWidthBase	mmkp.cpp	/^double corridorWidthBase;	\/\/ base value for corridor width$/;"	v
+corridor_method	mmkp.cpp	/^double corridor_method(IloModel & model, IloCplex & cplex, TwoD & x_ilo, $/;"	f
+cut_out_solution	mmkp.cpp	/^void cut_out_solution(IloModel & model, IloCplex & cplex, TwoD & x_ilo, int * xIlo, IloRangeArray & cutSol)$/;"	f
+decode	SampleDecoder.cpp	/^double SampleDecoder::decode(const std::vector< double >& chromosome) const $/;"	f	class:SampleDecoder
+defineModel	cplex.cpp	/^double defineModel(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj)$/;"	f
+defineRobustBertsimas	cplex.cpp	/^double defineRobustBertsimas(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, double Omega, double sigma, double u)$/;"	f
+defineRobustDet	cplex.cpp	/^double defineRobustDet(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, double Omega, double sigma, double u)$/;"	f
+defineRobustModel	cplex.cpp	/^double defineRobustModel(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, IloNumVar & Q_ilo, double Omega, double sigma)$/;"	f
+elapsedTime	timer.cpp	/^double timer::elapsedTime(const TYPE& type) {$/;"	f	class:timer
+find_best	mmkp.cpp	/^void find_best(int * F, double ** rc)$/;"	f
+find_worst	mmkp.cpp	/^void find_worst(int ** F0, double ** rc, double propFixed0)$/;"	f
+get_cplex_sol	cplex.cpp	/^double get_cplex_sol(IloModel & model, IloCplex & cplex, TwoD & x_ilo, int * xIlo)$/;"	f
+get_first_lb	mmkp.cpp	/^double get_first_lb(IloModel & model, IloCplex & cplex, TwoD & x_ilo, IloObjective & obj, $/;"	f
+inp	mmkp.cpp	/^INSTANCE inp;			\/\/ INSTANCE DATA$/;"	v
+lagrange_step	lagrange.cpp	/^double lagrange_step(double * lambda, int * xL, int iter, double ** rc)$/;"	f
+lagrangean_phase	mmkp.cpp	/^void lagrangean_phase(INSTANCE & inp, IloModel & model, IloCplex & cplex, TwoD & x_ilo, $/;"	f
+lambda_initialization	lagrange.cpp	/^void lambda_initialization(double * lambda)$/;"	f
+lambda_initialization2	lagrange.cpp	/^void lambda_initialization2(double * lambda)$/;"	f
+lambda_random_perturbation	lagrange.cpp	/^void lambda_random_perturbation(double * lambda, double * lambdaBest)$/;"	f
+lambda_update	lagrange.cpp	/^bool lambda_update(double * lambda, double & delta, int * xL, double & bestLagr, $/;"	f
+main	brkgaMain.cpp	/^int main(int argc, char* argv[]) $/;"	f
+main	mmkp.cpp	/^int main(int argc, char *argv[])$/;"	f
+max_iter	mmkp.cpp	/^int max_iter;			\/\/ max number lagrangean iterations$/;"	v
+nC	cplex.cpp	/^    int nC;			\/\/ number of classes$/;"	m	struct:INSTANCE	file:
+nC	lagrange.cpp	/^    int nC;			\/\/ number of classes$/;"	m	struct:INSTANCE	file:
+nC	mmkp.cpp	/^		int nC;			\/\/ number of classes$/;"	m	struct:INSTANCE	file:
+nR	cplex.cpp	/^    int nR;			\/\/ number of resources (constraints)$/;"	m	struct:INSTANCE	file:
+nR	lagrange.cpp	/^    int nR;			\/\/ number of resources (constraints)$/;"	m	struct:INSTANCE	file:
+nR	mmkp.cpp	/^		int nR;			\/\/ number of resources (constraints)$/;"	m	struct:INSTANCE	file:
+nSolBase	mmkp.cpp	/^int nSolBase;			\/\/ nr of sols to be found by cplex within corridor$/;"	v
+parseOptions	options.cpp	/^int parseOptions(int argc, char* argv[])$/;"	f
+print_options	mmkp.cpp	/^void print_options(INSTANCE inp)$/;"	f
+propFixed0	mmkp.cpp	/^double propFixed0;		\/\/ % of vars to be fixed to zero$/;"	v
+propFixed1	mmkp.cpp	/^double propFixed1;		\/\/ % of vars to be fixed to one$/;"	v
+read_problem_data	mmkp.cpp	/^void read_problem_data(INSTANCE & inp)$/;"	f
+refine_solution	mmkp.cpp	/^double refine_solution(IloModel & model, IloCplex & cplex, TwoD & x_ilo, $/;"	f
+resetTime	timer.cpp	/^timer::resetTime() {$/;"	f	class:timer
+ri	cplex.cpp	/^    int * ri;			\/\/ number of items in each class i$/;"	m	struct:INSTANCE	file:
+ri	lagrange.cpp	/^    int * ri;			\/\/ number of items in each class i$/;"	m	struct:INSTANCE	file:
+ri	mmkp.cpp	/^		int * ri;			\/\/ number of items in each class i$/;"	m	struct:INSTANCE	file:
+select_corridor_width_base	SampleDecoder.cpp	/^double select_corridor_width_base(double r)$/;"	f
+select_cut	SampleDecoder.cpp	/^int select_cut(double r)$/;"	f
+select_nSol_base	SampleDecoder.cpp	/^int select_nSol_base(double r)$/;"	f
+select_one_base	SampleDecoder.cpp	/^double select_one_base(double r)$/;"	f
+select_zero_base	SampleDecoder.cpp	/^double select_zero_base(double r)$/;"	f
+sigma	mmkp.cpp	/^double sigma = 5.0;$/;"	v
+solve_KNAP	cplex.cpp	/^double solve_KNAP(IloModel model, IloCplex cplex, int solLimit, int displayLimit, int timeLim)$/;"	f
+solve_robust_problem	cplex.cpp	/^double solve_robust_problem(INSTANCE & inp, IloModel & model, IloCplex & cplex, $/;"	f
+stopping_criteria	mmkp.cpp	/^int stopping_criteria(int iter, int max_iter, double time_limit)$/;"	f
+tTime	mmkp.cpp	/^timer tTime;            \/\/!< Ojbect clock to measure REAL and VIRTUAL (cpu) time$/;"	v
+time_limit	mmkp.cpp	/^double time_limit;	\/\/!< wall-clock time limit$/;"	v
+timer	timer.cpp	/^timer::timer(void) {$/;"	f	class:timer
+ubStar	mmkp.cpp	/^double ubStar;			\/\/ best upper bound (lagr solution)$/;"	v
+update_best	mmkp.cpp	/^void update_best(int * xLBest, int * xL, double & ubStar, double zL, double * lambda, double * lambdaBest)$/;"	f
+w	cplex.cpp	/^    int *** w;$/;"	m	struct:INSTANCE	file:
+w	lagrange.cpp	/^    int *** w;$/;"	m	struct:INSTANCE	file:
+w	mmkp.cpp	/^		int *** w;			\/\/ knapsack constraints coefficients$/;"	m	struct:INSTANCE	file:
+zBest	mmkp.cpp	/^double zBest;			\/\/ best feasible solution (lower bound)$/;"	v
+~SampleDecoder	SampleDecoder.cpp	/^SampleDecoder::~SampleDecoder() { }$/;"	f	class:SampleDecoder

@@ -1,0 +1,71 @@
+    cout << "*** *** starting with brkga ... " << endl;
+
+    // store current brkGA solution
+    xGA = new int[inp.nC];
+
+    // initialize the BRKGA-based heuristic
+    const unsigned n    = inp.nR; // size of chromosomes
+    const unsigned p    = 10;	  // size of population
+    const double pe     = 0.15;	// fraction of population to be the elite-set
+    const double pm     = 0.105;	// fraction of population to be replaced by mutants
+    const double rhoe   = 0.60;	// prob that offspring inherit an allele from elite parent
+    const unsigned K    = 3;	// number of independent populations
+    const unsigned MAXT = 1; // number of threads for parallel decoding
+    const unsigned X_INTVL  = 100; // how often to exchange best individuals
+    const unsigned X_NUMBER = 2;   // exchange top 2 best
+    const unsigned MAX_GENS = 100;   // run for MAX_GENS generations
+	
+    SampleDecoder decoder;	// initialize the decoder
+
+    const long unsigned rngSeed = time(0); // seed to the random number generator
+    MTRand rng(rngSeed);     // initialize random number generator
+
+    // setup data structure to hold best bRKGA solution
+    xBest = new int[inp.nC];
+   
+    BRKGA< SampleDecoder, MTRand > algorithm(n, p, pe, pm, rhoe, decoder, rng, K, MAXT);
+	
+    generation     = 0; // current generation
+    double currentBest      = INFTY;
+
+    do 
+    {
+       
+	algorithm.evolve();	// evolve the population for one generation
+       
+	if (algorithm.getBestFitness() < currentBest)
+	{
+	    currentBest = algorithm.getBestFitness();
+	    cout << "Generation[" << generation << "] Current best is " << currentBest << endl;
+	}
+#ifdef M_DEBUG
+	fsol << algorithm.getBestFitness();
+	std::vector <double> bestX =algorithm.getBestChromosome();
+	for (unsigned j = 0; j < bestX.size(); j++)
+	    fsol << "    " << bestX[j];
+	fsol << endl;
+#endif
+
+	if((++generation) % X_INTVL == 0) {
+	    algorithm.exchangeElite(X_NUMBER);	// exchange top individuals
+	}
+    } while (generation < MAX_GENS);
+	
+
+
+   
+
+#ifdef M_DEBUG   
+    std::vector <double> bestX =algorithm.getBestChromosome();
+
+    for (unsigned j = 0; j < bestX.size(); j++)
+	cout << "    " << bestX[j];
+    cout << endl;
+
+    for (unsigned j = 0; j < bestX.size(); j++)
+	fsol << "    " << bestX[j];
+    fsol << endl;
+   
+    fsol.close();
+#endif
+
