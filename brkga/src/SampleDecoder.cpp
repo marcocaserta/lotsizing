@@ -71,6 +71,20 @@ double select_one_base(double r)
         return 0.25;
 }
 
+double select_nr_columns_DW(double r)
+{
+    if (r < 0.20)
+        return 50;
+        else if (r < 0.40)
+            return 100;
+        else if (r < 0.60)
+            return 200;
+        else if (r < 0.80)
+            return 400;
+        else
+            return 1000;
+}
+
 
 double SampleDecoder::decode(const std::vector< double >& chromosome) const 
 {
@@ -78,17 +92,21 @@ double SampleDecoder::decode(const std::vector< double >& chromosome) const
     double corridorWidthBase = select_corridor_width_base(chromosome[0]);
     double propFixed0        = select_zero_base(chromosome[1]);
     double propFixed1        = select_one_base(chromosome[2]);
+    int    nSolInPool        = select_nr_columns_DW(chromosome[3]);
 
 
-    string sBase = "python ../clspBenders.py -i ../../benders/data/tr24-15 -a 2";
+    string sBase = "python ../clspBenders.py -i ../../benders/data/tr24-15 -a 3";
     stringstream s1;
     s1 << corridorWidthBase;
     stringstream s2;
     s2 << propFixed0;
     stringstream s3;
     s3 << propFixed1;
+    stringstream s4;
+    s4 << nSolInPool;
 
-    string commLine =  sBase + " -c " + s1.str() + " -z " + s2.str() + " -o " + s3.str(); 
+    string commLine =  sBase + " -c " + s1.str() + " -z " + s2.str() + " -o " 
+        + s3.str() + " -p " + s4.str();
 
     const char * cLine = commLine.c_str();
     double outCL = system(cLine);

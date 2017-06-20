@@ -13,7 +13,7 @@ int main(int argc, char* argv[])
    fsol << "Initializing file " << endl;
    cout << "--------------> Generation[0] " << endl;
 
-   const unsigned n = 3;		// size of chromosomes
+   const unsigned n = 4;		// size of chromosomes
    const unsigned p = 50;	// size of population
    const double pe = 0.20;		// fraction of population to be the elite-set
    const double pm = 0.10;		// fraction of population to be replaced by mutants

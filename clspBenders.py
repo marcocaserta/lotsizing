@@ -270,6 +270,7 @@ from dw2 import *
 #  from dw import *
 
 lbSummary = "lowerBounds.txt"
+ubSummary = "upperBounds.txt"
 
 #  lbFile = open(lbSummary, "a")
 
@@ -524,6 +525,8 @@ def parseCommandLine(argv):
     
     -o ones        soft fixing to one
 
+    -p pool         number of solutions in pool (used in DW)
+
     -a algorithm   type of algorithm used:
 
     With respect to the type of algorithms that can be used, we have:
@@ -539,15 +542,16 @@ def parseCommandLine(argv):
     global cPercent
     global cZero
     global cOne
+    global nSolInPool
     global algo
 
     try:
-        opts, args = getopt.getopt(argv, "hi:u:c:z:o:a:",
-        ["help","ifile=","ucuts","cpercent","zeros","ones","algorithm"])
+        opts, args = getopt.getopt(argv, "hi:u:c:z:o:p:a:",
+        ["help","ifile=","ucuts","cpercent","zeros","ones","pool", "algorithm"])
     except getopt.GetoptError:
         print("Command Line Error. Usage : python cflp.py -i <inputfile> -u\
         <usercuts> -c <corridor width> -z <fix to zero> -o <fix to one> \
-        -a <algorithm BD, LR, DW, Cplex>")
+        -p <pool> -a <algorithm BD, LR, DW, Cplex>")
         sys.exit(2)
 
     for opt, arg in opts:
@@ -566,6 +570,8 @@ def parseCommandLine(argv):
             cZero = float(arg)
         elif opt in ("-o", "--ones"):
             cOne  = float(arg)
+        elif opt in ("-p", "--pool"):
+            nSolInPool  = int(arg)
         elif opt in ("-a", "--algorithm"):
             algo  = float(arg)
 
@@ -2385,6 +2391,8 @@ def printParameters():
     print("   - Corridor Width \t = {0:20.5f}".format(cPercent))
     print("   - Soft Fix Zero  \t = {0:20.5f}".format(cZero))
     print("   - Soft Fix One   \t = {0:20.5f}".format(cOne))
+    if algo == 3:
+        print("   - Nr. Sol in Pool \t = {0:20f}".format(nSolInPool))
     print("==================================================================")
     print("\n")
 
@@ -2437,7 +2445,7 @@ def main(argv):
         exit(102)
     if algo == 3:
         dw = DantzigWolfe(inp)
-        dw.dw_cycle(inp, lbSummary, startTime)
+        dw.dw_cycle(inp, lbSummary, ubSummary, startTime, cPercent, nSolInPool)
         exit(103)
     if algo == 4: #  Cplex MIP solver
         #  mip       = MIPReformulation(inp)

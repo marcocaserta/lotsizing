@@ -53,9 +53,10 @@ _INFTY   = sys.float_info.max
 #  _EPSI = sys.float_info.epsilon
 _EPSI    = 0.00001
 bigM     = 1.0e8
-nSolInPool =1000000
-#  nSolInPool =1000
-maxIter  = 40
+#  nSolInPool =1000000
+#  nSolInPool = 100
+nCorridor = 1
+maxIter  = 50
 
 
 class DantzigWolfe:
@@ -445,7 +446,7 @@ class DantzigWolfe:
 
         return rc
             
-    def column_generation(self, inp, u, alpha, theta):
+    def column_generation(self, inp, u, alpha, theta, cPercent, nSolInPool):
         lb   = 0.0
         cpxSub = self.cpxSub
         stopping = True
@@ -460,12 +461,11 @@ class DantzigWolfe:
             #  print("yWW :: ", self.yWW)
             #  print("xWW :: ", self.xWW)
             #  print("sWW :: ", self.sWW)
-            #  if rc < -_EPSI or self.iterNr <= 1:
-            #  if rc < 1000000*_EPSI or self.iterNr <= 1:
-            if rc < bigM or self.iterNr <= 1:
+            if rc < -_EPSI or self.iterNr <= 1:
+            #  if rc < bigM or self.iterNr <= 1:
                 stopping = False
                 self.add_column_to_master(inp, j, 0)
-                self.get_columns(inp, j, u, alpha)
+                self.get_columns(inp, j, u, alpha, cPercent, nSolInPool)
             #  input(".. next item ..")
 
         return stopping, lb
@@ -518,7 +518,7 @@ class DantzigWolfe:
         self.cpxMaster = cpxMaster
         self.n_ilo    = n_ilo
         
-    def get_columns(self, inp, item, u, alpha):
+    def get_columns(self, inp, item, u, alpha, cPercent, nSolInPool):
         cpxSub = self.cpxSub
         y_ilo  = self.y_ilo
         x_ilo  = self.x_ilo
@@ -546,45 +546,90 @@ class DantzigWolfe:
                                    rhs      = [rhs],
                                    names    = ["different"])
 
-        #  first, we solve the ULSP, and then we call the populate solution
-        #  self.cpxSub.parameters.mip.tolerances.absmipgap.set()
-        #  self.cpxSub.parameters.mip.tolerances.mipgap.set(0.05)
-        #  cpxSub.solve()
+        #  add corridor constraint around WW solution
+        rhs = cPercent*inp.nP
+        index = [y_ilo[t] for t in range(inp.nP)]
+        value = [(1.0-2.0*yWW[t]) for t in range(inp.nP)]
+        corridor_constraint = cplex.SparsePair(ind=index, val=value)
+        cpxSub.linear_constraints.add(lin_expr = [corridor_constraint],
+                                      senses   = ["L"],
+                                      rhs      = [rhs],
+                                      names    = ["corridor"])
+
         cpxSub.parameters.mip.pool.intensity.set(4)
         cpxSub.parameters.mip.pool.capacity.set(nSolInPool)
         #  cpxSub.parameters.mip.pool.relgap.set(0.9)
         cpxSub.parameters.mip.limits.populate.set(nSolInPool)
-        cpxSub.populate_solution_pool()
 
-        # collecting pool solutions (one of them should be WW)
-        names = cpxSub.solution.pool.get_names()
-        nPool = len(names)
-        print("POOL size = ", nPool)
-        #  for n in names:
-        #      print("z(",n,") = ", cpxSub.solution.pool.get_objective_value(n))
-            
-        q     = 1
-        for n in names:
-            #  rc = cpxSub.solution.pool.get_objective_value(n) - alpha[item]
-            #  if rc <= -_EPSI:
-                #  yAux      = [cpxSub.solution.get_values(y_ilo[t]) for t in range(inp.nP)]
-            #  self.yWW  = [cpxSub.solution.get_values(y_ilo[t]) for t in range(inp.nP)]
-            self.xWW  = [cpxSub.solution.pool.get_values(n, x_ilo[t]) for t in range(inp.nP)]
-            self.sWW  = [cpxSub.solution.pool.get_values(n, s_ilo[t]) for t in range(inp.nP)]
-                #  rc = self.compute_rc(inp, item, self.yWW, self.xWW, self.sWW, u, alpha)
-                #  input("...aka")
+        nAdded = 0
+        lDifferent = []
+        #  while nAdded < nSolInPool:
+        while nAdded < nCorridor:
+            #  print(" ** corridor cycle nr. ", nAdded)
+            cpxSub.populate_solution_pool()
+            #  print("STATUS subproblem = ",
+            #  cpxSub.solution.status[cpxSub.solution.get_status()])
+
+            if cpxSub.solution.status[cpxSub.solution.get_status()] ==\
+                "MIP_infeasible":
+                break
+
+            # collecting pool solutions (one of them should be WW)
+            names = cpxSub.solution.pool.get_names()
+            nPool = len(names)
+            #  print("POOL size = ", nPool)
+            #  for n in names:
+            #      print("z(",n,") = ", cpxSub.solution.pool.get_objective_value(n))
+                
+            q     = 1
+            for n in names:
+                #  rc = cpxSub.solution.pool.get_objective_value(n) - alpha[item]
                 #  if rc <= -_EPSI:
-            self.add_dominated_column_to_master(inp, item, q)
-            q += 1
+                    #  yAux      = [cpxSub.solution.get_values(y_ilo[t]) for t in range(inp.nP)]
+                #  self.yWW  = [cpxSub.solution.get_values(y_ilo[t]) for t in range(inp.nP)]
+                self.xWW  = [cpxSub.solution.pool.get_values(n, x_ilo[t]) for t in range(inp.nP)]
+                self.sWW  = [cpxSub.solution.pool.get_values(n, s_ilo[t]) for t in range(inp.nP)]
+                    #  rc = self.compute_rc(inp, item, self.yWW, self.xWW, self.sWW, u, alpha)
+                    #  input("...aka")
+                    #  if rc <= -_EPSI:
+                self.add_dominated_column_to_master(inp, item, q)
+                q += 1
+
+            nAdded += 1
+            if nAdded < nCorridor:
+                #  set new incumbent and cut it out
+                yI = [cpxSub.solution.get_values(y_ilo[t]) for t in
+                range(inp.nP)]
+
+                #  ensure that at least one element if != from new incumbent
+                rhs = 1 - sum([yI[t] for t in range(inp.nP)])
+                index = [y_ilo[t] for t in range(inp.nP)]
+                value = [(1-2*yI[t]) for t in range(inp.nP)]
+                diff_constraint = cplex.SparsePair(ind=index, val=value)
+                constrName = "different." + str(nAdded)
+                lDifferent.append(constrName)
+                cpxSub.linear_constraints.add(lin_expr = [diff_constraint],
+                                           senses   = ["G"],
+                                           rhs      = [rhs],
+                                           names    = [constrName])
+
+                
+
 
         cpxSub.linear_constraints.delete(lDominated)
         cpxSub.linear_constraints.delete("different")
+        cpxSub.linear_constraints.delete("corridor")
+        cpxSub.linear_constraints.delete(lDifferent)
 
 
 
-    def dw_cycle(self, inp, lbSummary, startTime):
 
-        lbStar = 0.0 
+
+    def dw_cycle(self, inp, lbSummary, ubSummary, startTime, cPercent,
+        nSolInPool):
+
+        self.lbStar = 0.0 
+        self.ubStar = bigM
         
         u, alpha, theta = self.initialize_multipliers(inp)
         self.iterNr     = 0
@@ -592,27 +637,44 @@ class DantzigWolfe:
         zMaster         = 0.0
         while not stopping and self.iterNr < maxIter:
             self.iterNr += 1
-            stopping, lb = self.column_generation(inp, u, alpha, theta)
+            stopping, lb = self.column_generation(inp, u, alpha, theta,
+            cPercent, nSolInPool)
             # computing LB using Lagrange
             lb += sum([inp.cap[t]*u[t] for t in range(inp.nP)])
-            if lb > lbStar:
-                lbStar = lb
+            if lb > self.lbStar:
+                self.lbStar = lb
                 with open(lbSummary,"a") as ff:
-                    ff.write("{0:20.5f} {1:20.5} \n".format(lbStar,
+                    ff.write("{0:20.5f} {1:20.5} \n".format(self.lbStar,
                     time()-startTime))
             print("Lagrangean Bound = ", lb)
             self.cpxMaster.solve()
-            #  self.cpxMaster.write("master.lp")
             u, alpha, theta = self.get_master_solution(inp)
             nLambda = sum([len(self.l_ilo[j]) for j in range(inp.nI)])
             zMaster = self.cpxMaster.solution.get_objective_value()
             print("MASTER INFO :: z({0:3d}) = {1:15.2f} -- size :: lambda =\
             {2:5d}".format(self.iterNr, zMaster, nLambda))
-            if (zMaster - lbStar) <= _EPSI:
+            if (zMaster - self.lbStar) <= _EPSI:
                 stopping = True
+            else:
+                self.cpxMaster.set_problem_type(self.cpxMaster.problem_type.MILP)
+                for j in range(inp.nI):
+                    for k in range(len(self.l_ilo[j])):
+                        self.cpxMaster.variables.set_types(self.l_ilo[j][k],
+                        self.cpxMaster.variables.type.binary)
+                self.cpxMaster.parameters.timelimit.set(10)
+                self.cpxMaster.solve()
+                ub = self.cpxMaster.solution.get_objective_value()
+                status = self.cpxMaster.solution.status[self.cpxMaster.solution.get_status()]
+                print("MIP intermediate = ", ub, " with status = ", status)
+                if ub < self.ubStar:
+                    self.ubStar = ub
+                    self.bestTime = time() - startTime
+                    with open(ubSummary,"a") as ff:
+                        ff.write("{0:20.5f} {1:20.5} \n".format(self.ubStar,
+                        self.bestTime))
 
-            
-        
+                self.cpxMaster.set_problem_type(self.cpxMaster.problem_type.LP)
+                
         # redefine master as MIP and solve it
         self.cpxMaster.set_problem_type(self.cpxMaster.problem_type.MILP)
         for j in range(inp.nI):
@@ -623,14 +685,26 @@ class DantzigWolfe:
         self.cpxMaster.write("MIP.lp")
         self.cpxMaster.parameters.mip.tolerances.absmipgap.set(_EPSI)
         self.cpxMaster.parameters.mip.tolerances.mipgap.set(_EPSI)
+        self.cpxMaster.parameters.timelimit.set(bigM)
         self.cpxMaster.solve()
-        print("MIP = ", self.cpxMaster.solution.get_objective_value())
+        zFinal = self.cpxMaster.solution.get_objective_value()
+        print("MIP = ", zFinal)
+        if zFinal < self.ubStar:
+            self.ubStar = zFinal
+            self.bestTime = time() - startTime
+            with open(ubSummary,"a") as ff:
+                ff.write("{0:20.5f} {1:20.5} \n".format(self.ubStar,
+                self.bestTime))
         print("STATUS = ",
         self.cpxMaster.solution.status[self.cpxMaster.solution.get_status()])
         for j in range(inp.nI):
             lSol = self.cpxMaster.solution.get_values(self.l_ilo[j])
             print("lambda = ", lSol)
         
+        with open("solution.txt", "w") as solFile:
+            solFile.write("DW  :: {0:20.5f} {1:20.5f}\
+            {2:20.5f} {3:10.5f} {4:10d} \n".format(self.lbStar,
+            self.ubStar, self.bestTime, cPercent, nSolInPool))
         
 
         
