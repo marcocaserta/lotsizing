@@ -262,6 +262,8 @@ import time
 import cplex
 from cplex.callbacks import UserCutCallback, LazyConstraintCallback
 from cplex.callbacks import SolveCallback, SimplexCallback
+from cplex.callbacks import HeuristicCallback
+from cplex.callbacks import IncumbentCallback
 
 from cplex.exceptions import CplexError
 
@@ -298,6 +300,18 @@ yPool     = []
 nPool     = 0
 ubBest    = 0.0
 startTime = time()
+
+#  class myCall(HeuristicCallback):
+class myCall(IncumbentCallback):
+    def __call__(self):
+        self.times_called += 1
+        zIncumbent = self.get_objective_value()
+        bestTime = time() - startTime
+        print("Cplex Incumbent = {0:20.5f} after {1:20.5f}\
+        seconds.".format(zIncumbent, bestTime))
+        with open(ubSummary,"a") as ff:
+            ff.write("{0:20.5f} {1:20.5} \n".format(zIncumbent,
+            bestTime))
 
 class SolveNodeCallback(SimplexCallback):
     def __call__(self):
@@ -2460,7 +2474,9 @@ def main(argv):
     if algo == 4: #  Cplex MIP solver
         #  mip       = MIPReformulation(inp)
         mip       = MIP(inp)
-        mip.solve(inp, withPrinting=1)
+        incumbentsCplex = mip.cpx.register_callback(myCall)
+        incumbentsCplex.times_called = 0
+        mip.solve(inp, withPrinting=1, display = 0)
         exit(104)
 
     print("Algorithm Type not defined. Choose between 1 and 4.")
