@@ -2197,7 +2197,8 @@ def getUB(inp, zSub, ySol):
     return z
 
 
-def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
+def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne, lbSummary,
+        ubSummary, startTime):
     """
     .. func:benderAlgorithm()
 
@@ -2345,6 +2346,10 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
             if ub < bestUB or ((nIter % 5 ) == 0 and gap < 0.1):
                 if ub < bestUB:
                     bestUB = ub
+                    bestTime = time() - startTime
+                    with open(ubSummary,"a") as ff:
+                        ff.write("{0:20.5f} {1:20.5} \n".format(bestUB,
+                        bestTime))
                     #  add corridor constraint
                     #  addCorridor(inp, cpx, yPool[0], y_ilo, nWidth)
                     if cPercent > 0.0:
@@ -2367,6 +2372,10 @@ def benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne):
     print(" ** LB = ", bestLB)
     print(" ** UB = ", bestUB)
 
+    with open("solution.txt", "w") as solFile:
+        solFile.write("B  :: {0:20.5f} {1:20.5f}\
+        {2:20.5f} {3:10.5f} {4:20.5f} {5:20.5f} \n".format(bestLB,
+        bestUB, bestTime, cPercent, cZero, cOne))
 
 def printParameters():
 
@@ -2429,11 +2438,12 @@ def main(argv):
     printParameters()
     if algo == 1:
         mip       = MIPReformulation(inp)
-        #  fixToZero = mip.solveLPZero(inp)
-        #  fixToOne  = mip.solveLPOne(inp)
-        #  zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
-        #  print("zHeur = ", zHeur)
-        benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne)
+        fixToZero = mip.solveLPZero(inp)
+        fixToOne  = mip.solveLPOne(inp)
+        zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
+        print("zHeur = ", zHeur)
+        benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne,
+        lbSummary, ubSummary, startTime)
         exit(101)
     if algo == 2:
         mip       = MIPReformulation(inp)
@@ -2441,7 +2451,7 @@ def main(argv):
         fixToOne  = mip.solveLPOne(inp)
         lagrange = Lagrange(inp, 99999999)
         lagrange.lagrangeanPhase(inp, mip, fixToZero, fixToOne, cPercent, cZero,
-        cOne)
+        cOne, lbSummary, ubSummary, startTime)
         exit(102)
     if algo == 3:
         dw = DantzigWolfe(inp)

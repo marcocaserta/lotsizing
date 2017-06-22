@@ -92,21 +92,22 @@ double SampleDecoder::decode(const std::vector< double >& chromosome) const
     double corridorWidthBase = select_corridor_width_base(chromosome[0]);
     double propFixed0        = select_zero_base(chromosome[1]);
     double propFixed1        = select_one_base(chromosome[2]);
-    int    nSolInPool        = select_nr_columns_DW(chromosome[3]);
+    // int    nSolInPool        = select_nr_columns_DW(chromosome[3]);
 
 
-    string sBase = "python ../clspBenders.py -i ../../benders/data/tr24-15 -a 3";
+    string sBase = "python ../clspBenders.py -i ../../benders/data/tr12-30 -a 1";
     stringstream s1;
     s1 << corridorWidthBase;
     stringstream s2;
     s2 << propFixed0;
     stringstream s3;
     s3 << propFixed1;
-    stringstream s4;
-    s4 << nSolInPool;
+    /* stringstream s4;
+     * s4 << nSolInPool; */
 
     string commLine =  sBase + " -c " + s1.str() + " -z " + s2.str() + " -o " 
-        + s3.str() + " -p " + s4.str();
+        + s3.str(); 
+        /* + " -p " + s4.str(); */
 
     const char * cLine = commLine.c_str();
     double outCL = system(cLine);

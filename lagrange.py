@@ -52,7 +52,7 @@ _INFTY = sys.float_info.max
 _EPSI  = sys.float_info.epsilon
 maxIter = 500000
 
-from clspBenders import lbSummary, startTime
+#  from clspBenders import lbSummary, startTime
 
 class Lagrange:
     """
@@ -215,7 +215,7 @@ class Lagrange:
         self.lmult = lmult
 
 
-    def lagrangeanStep(self, inp):
+    def lagrangeanStep(self, inp, lbSummary, startTime):
         """
         Each Lagrangean step receives as input the current multipliers. Based
         on the value of :math:`\\mathbf{u}`, i.e., ``lmult``, we recompute the
@@ -242,8 +242,6 @@ class Lagrange:
         if the newly found value ``zL`` is better (higher) than the best known
         lower bound so far, we update the lower bound.
         """
-        global startTime
-        global lbSummary
 
         lmult  = self.lmult
         cpx    = self.cpx
@@ -372,7 +370,7 @@ class Lagrange:
         self.normH    = normSub
 
 
-    def refineMIPSolution(self, inp, mip, cPercent):
+    def refineMIPSolution(self, inp, mip, cPercent, ubSummary, startTime):
         """
         Primal scheme based on the corridor method and the Lagrangean
         relaxation. The original MIP formulation is provided as input here
@@ -408,9 +406,12 @@ class Lagrange:
         zCM = mip.cpx.solution.get_objective_value()
         if zCM < ubStar:
             ubStar = zCM
-            self.bestTime = time() - self.initTime
+            self.bestTime = time() - startTime
             print(" *** CM({0:3d}) = {1:10.2f} after {2:7.3f} seconds.".\
                     format(self.iterL, ubStar, self.bestTime))
+            with open(ubSummary,"a") as ff:
+                ff.write("{0:20.5f} {1:20.5} \n".format(self.ubStar,
+                self.bestTime))
 
 
         cpx.linear_constraints.delete("corridor")
@@ -460,7 +461,7 @@ class Lagrange:
 
 
     def lagrangeanPhase(self, inp, mip, fixToZero, fixToOne, cPercent, cZero,
-    cOne):
+    cOne, lbSummary, ubSummary, startTime):
         """
         We employ a primal-dual scheme, in which the Lagrangean relaxation
         provides a sequence of (non-monotonically) increasing lower bound,
@@ -498,13 +499,14 @@ class Lagrange:
 
             print(" .. Lagrangean Cycle {0:4d} ..".format(mainCycle+1))
             while self.stoppingCriteria(maxIter, converged) is not True:
-                self.lagrangeanStep(inp)
+                self.lagrangeanStep(inp, lbSummary, startTime)
                 self.lmultUpdate(inp)
 
                 #  if self.iterL > 10 and self.improvement > 0.001:
                 if (self.iterL % 10) == 0 :
                     if cPercent > 0.0:
-                        self.refineMIPSolution(inp, mip, cPercent)
+                        self.refineMIPSolution(inp, mip, cPercent, ubSummary,
+                        startTime)
                 self.iterL += 1
 
                 if (self.iterL % 50) == 0:
