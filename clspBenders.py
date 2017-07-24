@@ -271,6 +271,8 @@ from lagrange import *
 from dw2 import *
 #  from dw import *
 
+largeInstances = True
+
 lbSummary = "lowerBounds.txt"
 ubSummary = "upperBounds.txt"
 
@@ -606,7 +608,41 @@ class Instance:
        self.max_prod = []
        self.cap      = []
        self.dcum     = []
-       with open(inputfile) as ff:
+
+       if largeInstances == True:
+           self.readLargeInstances(inputfile)
+       else:
+           self.readSmallInstances(inputfile)
+
+       print("setups = ", self.f)
+
+           
+       #  compute cumulative demand
+       for j in range(self.nI):
+           aux = []
+           aux.append(self.d[j][self.nP-1])
+           progr = 0
+           for t in range(self.nP-2,-1,-1):
+               aux.append(aux[progr]+self.d[j][t])
+               progr += 1
+           self.dcum.append(list(reversed(aux)))
+           #  print("cum dem item ", j , " = ", self.dcum[j])
+
+
+       # max production of item j in period t is the minimum between
+       # the limit set by capacity and the cumulative demand
+       for j in range(self.nI):
+           aa = [( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
+           self.max_prod.append([min(aa[t],self.dcum[j][t]) for t in \
+           range(self.nP)])
+           
+    
+    def readSmallInstances(self, inputfile):
+        """
+        read Trigeiro instances 
+        """
+
+        with open(inputfile) as ff:
             data = ff.readline()
             self.nI, self.nP = [int(v) for v in data.split()]
 
@@ -637,23 +673,71 @@ class Instance:
                 [self.d[i].append(temp[i]) for i in range(self.nI)]
 
 
-       #  compute cumulative demand
-       for j in range(self.nI):
-           aux = []
-           aux.append(self.d[j][self.nP-1])
-           progr = 0
-           for t in range(self.nP-2,-1,-1):
-               aux.append(aux[progr]+self.d[j][t])
-               progr += 1
-           self.dcum.append(list(reversed(aux)))
+
+    def readLargeInstances(self, inputfile):
+        with open(inputfile) as ff:
+            data = ff.readline()
+            self.nI, self.nP = [int(v) for v in data.split()]
+
+            self.d = [ [] for i in range(self.nI)]
+
+            print("We have ", self.nI, self.nP)
+            #  setup costs
+            for i in range(self.nI):
+                data = ff.readline()
+                temp = [float(v) for v in data.split()]
+                self.f.append([temp[1]]*self.nP)
+            #  inventory holding costs
+            for i in range(self.nI):
+                data = ff.readline()
+                temp = [float(v) for v in data.split()]
+                self.h.append([temp[1]]*self.nP)
+            #  demand for each item in each period
+            for i in range(self.nI):
+                for t in range(self.nP):
+                    data = ff.readline()
+                    temp = [float(v) for v in data.split()]
+                    self.d[i].append(temp[2])
+
+            #  skip cumulative demand
+            for i in range(self.nI):
+                for t in range(self.nP):
+                    for tp in range(t, self.nP):
+                        data = ff.readline()
+            #  skip cumulative holding costs
+            for i in range(self.nI):
+                for t in range(self.nP):
+                    for tp in range(t, self.nP):
+                        data = ff.readline()
+
+            #  resource usage a[j][t]
+            for i in range(self.nI):
+                data = ff.readline()
+                temp = [float(v) for v in data.split()]
+                a = [temp[1]]*self.nP
+                self.a.append(a)
+                self.m.append([0.0]*self.nP)
+                self.c.append([0.0]*self.nP)
 
 
-       # max production of item j in period t is the minimum between
-       # the limit set by capacity and the cumulative demand
-       for j in range(self.nI):
-           aa = [( (self.cap[t] - self.m[j][t])/self.a[j][t]) for t in range(self.nP)]
-           self.max_prod.append([min(aa[t],self.dcum[j][t]) for t in \
-           range(self.nP)])
+            for t in range(self.nP):
+                data = ff.readline()
+                temp = [float(v) for v in data.split()]
+                self.cap.append(temp[1])
+
+       #  #  compute cumulative demand
+       #   for j in range(self.nI):
+       #       aux = []
+       #       aux.append(self.d[j][self.nP-1])
+       #       progr = 0
+       #       for t in range(self.nP-2,-1,-1):
+       #           aux.append(aux[progr]+self.d[j][t])
+       #           progr += 1
+       #       self.dcum.append(list(reversed(aux)))
+
+
+                
+
 
 
 class MIP:
@@ -2452,10 +2536,10 @@ def main(argv):
     printParameters()
     if algo == 1:
         mip       = MIPReformulation(inp)
-        fixToZero = mip.solveLPZero(inp)
-        fixToOne  = mip.solveLPOne(inp)
-        zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
-        print("zHeur = ", zHeur)
+        #  fixToZero = mip.solveLPZero(inp)
+        #  fixToOne  = mip.solveLPOne(inp)
+        #  zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
+        #  print("zHeur = ", zHeur)
         benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne,
         lbSummary, ubSummary, startTime)
         exit(101)
