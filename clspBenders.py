@@ -271,7 +271,7 @@ from lagrange import *
 from dw2 import *
 #  from dw import *
 
-largeInstances = True
+largeInstances = False
 
 lbSummary = "lowerBounds.txt"
 ubSummary = "upperBounds.txt"
@@ -308,12 +308,14 @@ class myCall(IncumbentCallback):
     def __call__(self):
         self.times_called += 1
         zIncumbent = self.get_objective_value()
+        lb = self.get_best_objective_value()
         bestTime = time() - startTime
-        print("Cplex Incumbent = {0:20.5f} after {1:20.5f}\
-        seconds.".format(zIncumbent, bestTime))
+        print("Cplex Incumbent = {0:20.5f} after {1:10.2f}\
+        seconds. Current bound = {2:20.5f} with gap = \
+        {3:1.5f}".format(zIncumbent, bestTime, lb, (zIncumbent-lb)/lb))
         with open(ubSummary,"a") as ff:
-            ff.write("{0:20.5f} {1:20.5} \n".format(zIncumbent,
-            bestTime))
+            ff.write("{0:20.5f} {1:20.5} {2:20.5f} {3:20.5f}\n".format(zIncumbent,
+            bestTime, lb, (zIncumbent-lb)/lb))
 
 class SolveNodeCallback(SimplexCallback):
     def __call__(self):
@@ -2560,7 +2562,7 @@ def main(argv):
         mip       = MIP(inp)
         incumbentsCplex = mip.cpx.register_callback(myCall)
         incumbentsCplex.times_called = 0
-        mip.solve(inp, withPrinting=1, display = 0)
+        mip.solve(inp, withPrinting=1, display = 4)
         exit(104)
 
     print("Algorithm Type not defined. Choose between 1 and 4.")
