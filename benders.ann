@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8'?>
+<CPLEXAnnotations>
+<CPLEXAnnotation name='cpxBendersPartition' type='long' default='0'>
+</CPLEXAnnotation>
+</CPLEXAnnotations>

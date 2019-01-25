@@ -393,7 +393,7 @@ class Lagrange:
 
         nrOnes = np.sum([yL[j][t] > 1.0-_EPSI for j in range(inp.nI) for t in
         range(inp.nP)])
-        print("CORRIDOR = ", cPercent*inp.nP*inp.nI)
+        print("CORRIDOR = {0}/{1}".format(cPercent*inp.nP*inp.nI, inp.nP*inp.nI))
         rhs = cPercent*inp.nP*inp.nI - nrOnes
         index = [y_ilo[j][t] for j in range(inp.nI) for t in range(inp.nP)]
         value = [(1.0 - 2.0*yL[j][t]) for j in range(inp.nI) for t in range(inp.nP)]
@@ -402,7 +402,8 @@ class Lagrange:
                                    senses   = ["L"],
                                    rhs      = [rhs],
                                    names    = ["corridor"])
-        mip.solve(inp, nSol=3, timeLimit=10)
+        #  mip.solve(inp, nSol=5, timeLimit=10)
+        mip.solve(inp, nSol=1000, timeLimit=30)
         zCM = mip.cpx.solution.get_objective_value()
         if zCM < ubStar:
             ubStar = zCM
@@ -430,8 +431,7 @@ class Lagrange:
         y_ilo = mip.y_ilo
 
         rhsVal = cZero*len(fixToZero)
-        print("Rhs ZERO [{0}/{1}] = {2}".format(rhsVal, len(fixToZero),
-        fixToZero))
+        print("Rhs ZERO [{0}/{1}] ".format(rhsVal, len(fixToZero)))
         zero_cut = cplex.SparsePair(ind=fixToZero, val=[1.0]*len(fixToZero))
         cpx.linear_constraints.add(lin_expr = [zero_cut],
                                    senses   = ["L"],
@@ -439,9 +439,8 @@ class Lagrange:
 
         #  rhsVal = (1-0.1)*len(fixToOne)
         rhsVal = cOne*len(fixToOne)
-        print("Rhs ONE  [{0}/{1}] = {2}".format(rhsVal, len(fixToOne),
-        fixToOne))
-        one_cut = cplex.SparsePair(ind=fixToOne, val=[1.0]*len(fixToOne))
+        print("Rhs ONE  [{0}/{1}] ".format(rhsVal, len(fixToOne)))
+        one_cut = cplex.SparsePair(ind=fixToOne, val=[3.0]*len(fixToOne))
         cpx.linear_constraints.add(lin_expr = [one_cut],
                                    senses   = ["G"],
                                    rhs      = [rhsVal])

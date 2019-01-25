@@ -271,7 +271,7 @@ from lagrange import *
 from dw2 import *
 #  from dw import *
 
-largeInstances = False
+largeInstances = True
 
 lbSummary = "lowerBounds.txt"
 ubSummary = "upperBounds.txt"
@@ -554,6 +554,27 @@ def parseCommandLine(argv):
         3.  Dantzig-Wolfe
         4.  Cplex MIP solver
 
+    This is how the corridor and fixing flags work:
+    -c : the constraint is of type <=. Thus, the smaller the value, the
+    tighter the corridor. The value indicates the percentage of variables 
+    that can change value with respect to the incumbent. To deactivate
+    the corridor, we use -c 1.0
+
+    -z : fixing to zero. The constraint is of type <=. Thus, this
+    the percentage of variables currently to zero than can change
+    value (to one). The smaller the value, the strongest the fixing scheme.
+    If we set -z 0.0, this implies "hard fixing," i.e., all the variables
+    currently at zero are going to be fixed to zero. If we want to 
+    deactivate the scheme, we use -z 1.0 (all the variables currently
+    at zero can take value 1.)
+
+    -o : fixing to one. The constraint is of type >=. Thus, the right
+    hand side value indicates the percentage of variables currently at one
+    that shall be maintained at one. If we fix -o 1.0, this implies hard
+    fixing, since it means that all the variables currently at one should
+    be kept at the same value. If we want to deactivate the scheme, we
+    use -o 0.0.
+
     """
     global inputfile
     global userCuts
@@ -616,9 +637,6 @@ class Instance:
        else:
            self.readSmallInstances(inputfile)
 
-       print("setups = ", self.f)
-
-           
        #  compute cumulative demand
        for j in range(self.nI):
            aux = []
@@ -1989,6 +2007,10 @@ def createMaster(inp, cpx):
 
 
 
+def mipLPInterior(inp, mip):
+    cpxLP = cplex.Cplex(mip.cpx)
+    print("Solving here for interior ... ")
+    cpxLP.solve()
 
 
 def barrierInit(inp):
@@ -2036,6 +2058,8 @@ def inOutCycle(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
     activateKelley = 0
     bestLP         = 0.0
     while not stopping:
+        if iter > 20:
+            stopping = True
         cpx.solve()
         zLP = cpx.solution.get_objective_value()
         yLP = []
@@ -2137,6 +2161,8 @@ def inOutCycle2(cpx, worker, y_ilo, z_ilo, inp, globalProgr):
     activateKelley = 0
     bestLP         = 0.0
     while not stopping:
+        if iter > 20:
+            stopping = True
         cpx.solve()
         zLP = cpx.solution.get_objective_value()
         print("zLP(",iter,") = ", zLP)
@@ -2538,10 +2564,10 @@ def main(argv):
     printParameters()
     if algo == 1:
         mip       = MIPReformulation(inp)
-        #  fixToZero = mip.solveLPZero(inp)
-        #  fixToOne  = mip.solveLPOne(inp)
-        #  zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
-        #  print("zHeur = ", zHeur)
+        fixToZero = mip.solveLPZero(inp)
+        fixToOne  = mip.solveLPOne(inp)
+        zHeur     = mip.solve(inp,nSol    = 100, display = 0, withPool = 1)
+        print("zHeur = ", zHeur)
         benderAlgorithm(inp, fixToZero, fixToOne, cPercent, cZero, cOne,
         lbSummary, ubSummary, startTime)
         exit(101)
