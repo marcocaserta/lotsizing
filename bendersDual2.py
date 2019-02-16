@@ -117,30 +117,35 @@ class BendersLazyConsCallback(LazyConstraintCallback):
 
         """
 
-        # get data structure (self is the master)
-        #  mip    = self.mip
+        mip    = self.mip
+        inp    = self.inp
+
+        #  print("NR NODES = ", self.get_num_nodes())
+        #  print("GAP = ", self.get_MIP_relative_gap())
+
         cpx    = self.cpx
         worker = self.worker
         y_ilo  = self.y_ilo
         z_ilo  = self.z_ilo
-        inp    = self.inp
         bestLB = self.bestLB
         bestUB = self.bestUB
+        bestCM = self.bestCM
+        bestTime = self.bestTime
 
+
+        self.nIter += 1
         #  get current master solution
         objMaster = self.get_objective_value()
         lb        = self.get_best_objective_value()
         if lb > bestLB:
             bestLB = lb
-        #  if objMaster < bestUB:
-        #      bestUB = objMaster
         zHat = self.get_values(z_ilo)
-        ySol = []
-        for j in range(inp.nI):
-            ySol.append([])
-            ySol[j] = self.get_values(y_ilo[j])
-        print("[{0:5d}] lb = {1:9.2f}; ub = {2:9.2f}".format(self.nIter,
-        bestLB, bestUB))
+        ySol = [self.get_values(y_ilo[j]) for j in range(inp.nI)]
+        #  for j in range(inp.nI):
+        #      ySol.append([])
+        #      ySol[j] = self.get_values(y_ilo[j])
+        #  print("[{0:5d}] lb = {1:9.2f}; ub = {2:9.2f}".format(self.nIter,
+        #  bestLB, bestCM))
 
         # add cut to the master
         # NOTE: cplex makes a working copy of the master (to which I am not able to
@@ -149,30 +154,84 @@ class BendersLazyConsCallback(LazyConstraintCallback):
         #  cutType, zSub = worker.solveSubPrimal(inp, ySol, zHat, y_ilo, z_ilo)
         cutType, zSub = worker.solveSubQ(inp, ySol, zHat, y_ilo, z_ilo)
 
-        myUB = (objMaster - zHat) + zSub
-        if myUB < bestUB:
-            bestUB = myUB
+        # NOTE: Remove this part when activating CM
+        zUB = (objMaster - zHat) + zSub
+        if zUB < bestCM:
+            bestCM = zUB
+            print("** New UB found by Benders = ", bestCM)
+            bestTime = time.time() - self.startTime
+
+
 
         self.add(constraint = worker.cutLhs,
                  sense      = "L",
-                 rhs        = worker.cutRhs)
-                 #  use        = self.use_constraint.purge)
+                 rhs        = worker.cutRhs,
+                 use        = self.use_constraint.purge)
 
-        #  delta = int(inp.nI*inp.nP*0.05)
-        #  delta = 10
-        #  corridorLhs, corridorRhs = addCorridor(inp, delta, ySol, y_ilo)
-        #  print("Adding corridor", corridorLhs, corridorRhs)
-        #  self.add_local(constraint = corridorLhs,
-        #           sense      = "L",
-        #           rhs        = corridorRhs)
-        #
-        #  self.Lhs.append(worker.cutLhs)
-        #  self.Rhs.append(worker.cutRhs)
+
+        self.gap = self.get_MIP_relative_gap()
+        if self.gap < 0.03:
+            # call corridor method
+            delta = int(inp.nI*inp.nP*0.05)
+            delta = 20
+            corridorLhs, corridorRhs = addCorridor(inp, delta, ySol, y_ilo)
+            constrName = "corridor." + str(self.nCM)
+            #  print("** Adding corridor Nr. ", constrName)
+            mip.addConstraint(corridorLhs, corridorRhs, "L", constrName)
+            self.nCM += 1
+            #  mip.solve(inp, nSol=10)
+
+            self.bestUB = self.get_best_objective_value()
+            self.gap = self.get_MIP_relative_gap()
+
+            MIPstatus = mip.solve(inp)
+            print("MIP Status inside callback ", MIPstatus)
+            #  if self.nIter >5:
+            #      MIPstatus = -1
+            if MIPstatus == -1:
+                print("getting out of callbacks")
+                self.abort()
+                return
+
+            mip.getSolution(inp, withPrinting=1)
+            if mip.z < bestCM:
+                bestCM = mip.z
+                print("** New UB found by CM = ", bestCM)
+                bestTime = time.time() - self.startTime
+            #  mip.removeConstraint(constrName)
+            mip.reverseConstraint(corridorLhs, corridorRhs, "G", constrName)
+
+            # now add cut found by CM
+            cutType, zSub = worker.solveSubQ(inp, mip.ySol, zHat, y_ilo, z_ilo)
+
+            myUB = (objMaster - zHat) + zSub
+            if myUB < bestUB:
+                bestUB = myUB
+
+            self.add(constraint = worker.cutLhs,
+                     sense      = "L",
+                     rhs        = worker.cutRhs,
+                     use        = self.use_constraint.purge)
+
+            #  print("Adding corridor", corridorLhs, corridorRhs)
+            #  .add_local(constraint = corridorLhs,
+            #           sense      = "L",
+            #           rhs        = corridorRhs)
+            #
+            #  self.Lhs.append(worker.cutLhs)
+            #  self.Rhs.append(worker.cutRhs)
+            
+
+
+
+
 
         self.nIter += 1
 
         self.bestLB = bestLB
         self.bestUB = bestUB
+        self.bestCM = bestCM
+        self.bestTime = bestTime
         self.cpx    = cpx
 
 def addCorridor(inp, delta, ySol, y_ilo):
@@ -298,6 +357,7 @@ class Instance:
        self.cap      = []
        self.dcum     = []
 
+       #  largeInstances = True
        if largeInstances == True:
            self.readLargeInstances(inputfile)
        else:
@@ -437,6 +497,48 @@ class Instance:
         #  print("Cumulative demands are ", self.dcum)
         #  exit(23)
 
+def separateTrigeiro(inputfile):
+
+    print("Open file ", inputfile)
+    namefile = "g"
+    with open(inputfile) as ff:
+        for i in range(5): # 5 instances per type
+
+            print("** CYCLE = ", i," **")
+            print("*"*80)
+            data = ff.readline()
+            nI, nP = [int(v) for v in data.split()]
+
+            print("Nr. items and nr. periods = ", nI, " ", nP)
+            namefile = "dataTrigeiroG/g" + str(nI) + "-" + str(nP) + "."  + str(i)
+            fdata = open(namefile, "w")
+            print("Writing in file", namefile)
+            fdata.write(data)
+            
+
+            ff.readline() # skip this line (I do not know what this is)
+
+            # capacity
+            data = ff.readline()
+            fdata.write(data)
+
+            # a, h, m, f, c (c is set to 0)
+            for i in range(nI):
+                data = ff.readline()
+                fdata.write(data)
+                print(data)
+                
+            # demand (for each period, for each item)
+            for t in range(nP):
+                data = ff.readline()
+                fdata.write(data)
+
+            ff.readline()
+        # done with this file
+
+
+
+
 def getInstanceStats(inp):
     totUsed = 0
     totAvail = 0
@@ -511,8 +613,8 @@ class MIP:
                                   types = ["C"],
                                   names = [varName])
 
-        #  print("ANNOTATIONS :: ", cpx.long_annotations.get_values(benders,
-        #  objtype))
+        print("ANNOTATIONS :: ", cpx.long_annotations.get_values(benders,
+        objtype))
 
         #  create variables s_jt
         for j in range(inp.nI):
@@ -589,6 +691,28 @@ class MIP:
         self.s_ilo = s_ilo
         self.sI    = sI
 
+    def addConstraint(self, Lhs, Rhs, direction="L", constrName=""):
+        cpx = self.cpx
+        cpx.linear_constraints.add(lin_expr = [Lhs],
+                                   senses   = [direction],
+                                   rhs      = [Rhs],
+                                   names    = [constrName])
+
+        self.cpx = cpx
+
+    def removeConstraint(self, constrName):
+        cpx = self.cpx
+        print("Nr. Constraints Before= ", cpx.linear_constraints.get_num())
+        cpx.linear_constraints.delete(constrName)
+        print("Nr. Constraints After= ", cpx.linear_constraints.get_num())
+        self.cpx = cpx
+
+    def reverseConstraint(self, Lhs, Rhs, direction = "G", constrName=""):
+        cpx = self.cpx
+        cpx.linear_constraints.set_rhs(constrName, Rhs+1)
+        cpx.linear_constraints.set_senses(constrName, direction)
+        self.cpx = cpx
+
 
 
         
@@ -624,17 +748,19 @@ class MIP:
             cpx.parameters.mip.limits.solutions.set(nSol)
             cpx.parameters.mip.display.set(display)
             cpx.parameters.mip.interval.set(5000) # how often to print info
-            #  cpx.parameters.mip.tolerances.mipgap.set(0.000000001)
-            #  cpx.parameters.mip.tolerances.absmipgap.set(0.000000001)
+            cpx.parameters.mip.tolerances.mipgap.set(0.000000001)
+            cpx.parameters.mip.tolerances.absmipgap.set(0.000000001)
 
 
             cpx.solve()
+            if cpx.solution.get_status() == cpx.solution.status.MIP_infeasible:
+                return -1
+            else:
+                return 1
         
         except CplexError as exc:
             print("CPLEX ERROR =", exc)
             exit(999)
-
-        self.getSolution(inp, withPrinting=2)
 
     def getSolution(self, inp, withPrinting=0):
 
@@ -642,9 +768,10 @@ class MIP:
         y_ilo = self.y_ilo
 
         if withPrinting >= 1:
-            print("STATUS = ", cpx.solution.status[cpx.solution.get_status()])
-            print("OPT SOL found = ", cpx.solution.get_objective_value())
-            print("Time          = ", time.time() - startTime)
+            print("STATUS \t= ", cpx.solution.status[cpx.solution.get_status()])
+            print("OPT SOL found \t= ", cpx.solution.get_objective_value())
+            print("BEST BOUND found \t= ", cpx.solution.MIP.get_best_objective())
+            print("Time          \t= ", time.time() - startTime)
         #  if cpx.solution.get_status() == cpx.solution.status.optimal_tolerance\
             #  or cpx.solution.get_status() == cpx.solution.status.optimal:
         ubBest = cpx.solution.get_objective_value()
@@ -708,7 +835,7 @@ class MIPReformulation(MIP):
         cpx.objective.set_sense(cpx.objective.sense.minimize)
         #  cpx.set_results_stream(None)
         #  cpx.set_log_stream(None)
-        cpx.parameters.benders.strategy.set(-1)
+        cpx.parameters.benders.strategy.set(1) #  use -1 to deactivate BENDERS
         cpx.write_benders_annotation("benders.ann")
         benders = cpx.long_annotations.add("cpxBendersPartition",1)
         objtype = cpx.long_annotations.object_type.variable
@@ -1119,9 +1246,9 @@ class WorkerLPQ:
         cpxQ.set_results_stream(None)
         cpxQ.set_log_stream(None)
 
-        cpxQ.parameters.preprocessing.presolve.set(
-                cpxQ.parameters.preprocessing.presolve.values.off)
-        cpxQ.parameters.preprocessing.reduce.set(0)
+        #  cpxQ.parameters.preprocessing.presolve.set(
+        #          cpxQ.parameters.preprocessing.presolve.values.off)
+        #  cpxQ.parameters.preprocessing.reduce.set(0)
         cpxQ.parameters.lpmethod.set(cpxQ.parameters.lpmethod.values.dual)
         cpxQ.objective.set_sense(cpxQ.objective.sense.minimize)
 
@@ -1156,7 +1283,7 @@ class WorkerLPQ:
             for t in range(inp.nP):
                 varName = "sI." + str(j) + "." + str(t)
                 sI[j].append(cpxQ.variables.get_num())
-                cpxQ.variables.add(obj  = [100000],
+                cpxQ.variables.add(obj  = [50],
                                    lb   = [0.0],
                                    names = [varName])
 
@@ -1585,6 +1712,8 @@ def newIOCycle(cpx, worker, y_ilo, z_ilo, inp):
     _alpha = 0.9
     _lambda = 0.1
     _delta = 0.00002
+    _delta = 0.000000004
+
     globalProgr = 1
 
     # solve current master LP
@@ -1640,9 +1769,9 @@ def newIOCycle(cpx, worker, y_ilo, z_ilo, inp):
             yy.append(aux)
 
         #  print("3 - Separator 3 - Separator 3 - Separator :: ", yy)
-        cutType, zSub = worker.solveSubPrimal(inp, yy, zHat, y_ilo, z_ilo)
+        #  cutType, zSub = worker.solveSubPrimal(inp, yy, zHat, y_ilo, z_ilo)
         #  cutType, zSub = worker.solveSubDual(inp, yy, zHat, y_ilo, z_ilo)
-        #  cutType, zSub = worker.solveSubQ(inp, yy, zHat, y_ilo, z_ilo)
+        cutType, zSub = worker.solveSubQ(inp, yy, zHat, y_ilo, z_ilo)
 
         #  if globalProgr% 5 == 0:
         #  NOTE: removing these constraints does not seem useful
@@ -1721,7 +1850,7 @@ def bendersCallbackScheme(inp,mip):
     #  worker = WorkerLPPrimal(inp)
     #  worker = WorkerLPDual(inp)
     workerPrimal = WorkerLPPrimal(inp)
-
+    worker = WorkerLPQ(inp)
     # Set up cplex parameters to use the cut callback for separating
     # Benders' cuts
     #  cpx.parameters.preprocessing.presolve.set(
@@ -1752,34 +1881,40 @@ def bendersCallbackScheme(inp,mip):
 
     print("Problem type is ", cpx.problem_type[cpx.get_problem_type()])
     #  newIOCycle(cpx, workerPrimal, y_ilo, z_ilo, inp)
+    newIOCycle(cpx, worker, y_ilo, z_ilo, inp)
     #  cpx.write("inout-6-15.lp")
-    cpx.read("inout-6-15.lp")
+    #  cpx.read("inout-6-15.lp")
     #
     cpx.set_problem_type(cpx.problem_type.MILP)
     for j in range(inp.nI):
         for t in range(inp.nP):
             cpx.variables.set_types(y_ilo[j][t], cpx.variables.type.binary)
     print("Problem type is ", cpx.problem_type[cpx.get_problem_type()])
-    input("aka")
-
-    worker = WorkerLPQ(inp)
-    # register LAZY callback
-    lazyBenders        = cpx.register_callback(BendersLazyConsCallback)
-    lazyBenders.cpx    = cpx
-    lazyBenders.inp    = inp
-    #  lazyBenders.mip    = mip
-    lazyBenders.z_ilo  = z_ilo
-    lazyBenders.y_ilo  = y_ilo
-    lazyBenders.worker = worker
-    lazyBenders.solved = 0
-    lazyBenders.rc     = []
-    lazyBenders.nIter  = 0
-    lazyBenders.bestLB = -_INFTY
-    lazyBenders.bestUB =  _INFTY
-    lazyBenders.Lhs    = []
-    lazyBenders.Rhs    = []
 
     startTime = time.time()
+
+    # register LAZY callback
+    lazyBenders           = cpx.register_callback(BendersLazyConsCallback)
+    lazyBenders.cpx       = cpx
+    lazyBenders.inp       = inp
+    lazyBenders.mip       = mip
+    lazyBenders.z_ilo     = z_ilo
+    lazyBenders.y_ilo     = y_ilo
+    lazyBenders.worker    = worker
+    lazyBenders.solved    = 0
+    lazyBenders.rc        = []
+    lazyBenders.nIter     = 0
+    lazyBenders.bestLB    = -_INFTY
+    lazyBenders.bestUB    = _INFTY
+    lazyBenders.Lhs       = []
+    lazyBenders.Rhs       = []
+    lazyBenders.nCM       = 0
+    lazyBenders.bestCM    = _INFTY
+    lazyBenders.bestTime  = -1
+    lazyBenders.startTime = startTime
+
+
+
     # Solve the model
     cpx.parameters.mip.limits.nodes.set(1)
     cpx.solve()
@@ -1793,7 +1928,6 @@ def bendersCallbackScheme(inp,mip):
                                    rhs      = [lazyBenders.Rhs[i]],
                                    names    = ["staticCut."+str(progr)])
         progr += 1
-    cpx.write("master.static.lp1")
 
     lazyBenders.Lhs    = []
     lazyBenders.Rhs    = []
@@ -1808,21 +1942,32 @@ def bendersCallbackScheme(inp,mip):
                                    rhs      = [lazyBenders.Rhs[i]],
                                    names    = ["staticCut."+str(progr)])
         progr += 1
-    cpx.write("master.static.lp2")
-
-
 
     cpx.parameters.mip.limits.nodes.set(9223372036800000000)
+    cpx.parameters.timelimit.set(10)
     cpx.solve()
-    
                                    
+    print("MAIN status = ", cpx.solution.get_status())
+    print("\n")
+    print("*"*80)
+    if cpx.solution.get_status() == cpx.solution.status.optimal:
+        solution = cpx.solution
+        print()
+        print("Solution status: ", solution.status[solution.get_status()])
+        print("Objective value: ", solution.get_objective_value())
+        print("Time to best   : ", lazyBenders.bestTime)
 
-    solution = cpx.solution
-    print()
-    print("Solution status: ", solution.status[solution.get_status()])
-    print("Objective value: ", solution.get_objective_value())
+    else:
+        print("Cplex lb \t=", lazyBenders.bestUB)
+        print("Cplex gap \t=", lazyBenders.gap)
+        print("Best CM \t=", lazyBenders.bestCM)
+        print("Time to best \t=", lazyBenders.bestTime)
 
-    print("Thus time is ", time.time() - startTime)
+        print("Total Time\t=", time.time() - startTime)
+    
+    writeBendersSol2Disk("result.txt", inputfile, cpx, lazyBenders)
+
+    print("*"*80)
     
 
 
@@ -1888,6 +2033,41 @@ def bendersDual(inp):
         if ubBest - bestLB < _EPSI:
             stopping = True
 
+def writeToDisk(namefile, instance, cpx):
+    with open(namefile, "w") as ftxt:
+        status = cpx.solution.status[cpx.solution.get_status()]
+        zStar = "{0:9.2f}".format(cpx.solution.get_objective_value())
+        lb    = "{0:9.2f}".format(cpx.solution.MIP.get_best_objective())
+        totTime = "{0:5.2f}".format(time.time() - startTime)
+        gap = "{0:7.5f}".format(cpx.solution.MIP.get_mip_relative_gap())
+        row = instance + "\t" + str(status) + "\t"  +  str(zStar) + "\t" + str(totTime) + "\t" + str(lb) + "\t" + str(gap) + "\n"
+        ftxt.write(row)
+
+def writeBendersSol2Disk(namefile, instance, cpx, lazyBenders):
+
+    with open(namefile, "w") as ff:
+        status = cpx.solution.status[cpx.solution.get_status()]
+        if cpx.solution.get_status() == cpx.solution.status.optimal:
+            zStar = "{0:9.2f}".format(cpx.solution.get_objective_value())
+            lb    = "{0:9.2f}".format(cpx.solution.MIP.get_best_objective())
+            totTime = "{0:5.2f}".format(time.time() - startTime)
+            gap = "{0:7.5f}".format(cpx.solution.MIP.get_mip_relative_gap())
+            row = instance + "\t" + str(status) + "\t"  +  str(zStar) + "\t" + str(totTime) + "\t" + str(lb) + "\t" + str(gap) + "\n"
+            ff.write(row)
+        else:
+            zStar = "{0:9.2f}".format(lazyBenders.bestCM)
+            lb    = "{0:9.2f}".format(lazyBenders.bestLB)
+            totTime = "{0:5.2f}".format(lazyBenders.bestTime)
+            gap     = "{0:7.5f}".format(lazyBenders.gap)
+
+            row = instance + "\t" + str(status) + "\t"  +  str(zStar) + "\t" + str(totTime) + "\t" + str(lb) + "\t" + str(gap) + "\n"
+            ff.write(row)
+
+
+
+
+    
+
 
 def main(argv):
     """
@@ -1919,6 +2099,9 @@ def main(argv):
         #  outfile.write("{0:20s} {1:20.5f} {2:25s} {3:20.5f} {4:20.7f} {5:20.7f}\n".
         #                format(inputfile, zOpt, stat, lb, gap, zTime))
 
+    #  separateTrigeiro("../dantzig-wolfe/data/trigeiro/G2430.dat")
+    #  exit(123)
+
     parseCommandLine(argv)
     inp = Instance(inputfile)
     startTime = time.time()
@@ -1931,7 +2114,10 @@ def main(argv):
     if algo == 4: #  Cplex MIP solver
         #  mip       = MIP(inp)
         mip       = MIPReformulation(inp)
-        mip.solve(inp, withPrinting = 1, display = 4)
+        status = mip.solve(inp, withPrinting = 1, display = 4, timeLimit=1800)
+        if status == 1:
+            mip.getSolution(inp, withPrinting=1)
+            writeToDisk("result.txt", inputfile, mip.cpx)
         exit(104)
     if algo == 3: # Cplex with callbacks
         mip       = MIPReformulation(inp)
